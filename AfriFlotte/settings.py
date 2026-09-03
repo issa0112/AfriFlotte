@@ -58,11 +58,22 @@ ALLOWED_HOSTS = [
     for hote in os.environ.get('ALLOWED_HOSTS', '').split(',')
     if hote.strip()
 ]
-_domaine_railway = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
+
+# Le domaine public généré automatiquement par Railway
+# (*.up.railway.app) doit TOUJOURS être autorisé, même si la variable
+# d'environnement ALLOWED_HOSTS est vide ou mal configurée : sans ça,
+# le service ne répond même pas sur sa propre URL générée.
+_domaine_railway = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '').strip()
 if _domaine_railway and _domaine_railway not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_domaine_railway)
-if DEBUG and not ALLOWED_HOSTS:
-    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+# En développement (DEBUG=True), on garde localhost/127.0.0.1
+# disponibles en complément des autres hôtes déjà configurés, plutôt
+# que de les utiliser uniquement en secours quand tout est vide.
+if DEBUG:
+    for hote_local in ('localhost', '127.0.0.1'):
+        if hote_local not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(hote_local)
 
 
 # Application definition
