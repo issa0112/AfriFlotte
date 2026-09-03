@@ -30,7 +30,13 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
+# build/web/ reste suivi (exception ci-dessous) : c'est ce que Django sert
+# directement à `/app/` en production (AfriFlotte/urls.py) tant qu'aucune
+# étape de build Flutter n'existe côté Railway — sans lui, Connexion/
+# Inscription depuis la vitrine renvoient un 404. Les autres cibles de
+# build/ (mobile/desktop) restent ignorées comme avant.
+/build/*
+!/build/web/
 /coverage/
 
 # Symbolication related

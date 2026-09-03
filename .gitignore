@@ -23,7 +23,11 @@ afriflotte_app/.dart_tool/
 afriflotte_app/.flutter-plugins
 afriflotte_app/.flutter-plugins-dependencies
 afriflotte_app/.packages
-afriflotte_app/build/
+# build/web/ reste suivi : voir l'exception dans afriflotte_app/.gitignore
+# (le .gitignore généré par `flutter create`, plus spécifique que celui-ci,
+# a la priorité — inutile de dupliquer la règle ici).
+afriflotte_app/build/*
+!afriflotte_app/build/web/
 afriflotte_app/ios/Flutter/.last_build_id
 afriflotte_app/linux/flutter/generated_plugin_registrant.cc
 afriflotte_app/macos/Flutter/GeneratedPluginRegistrant.swift
@@ -46,5 +50,3 @@ Thumbs.db
 # --- Divers ---
 *.log
 node_modules/
-test_valid.png
-.claude/
