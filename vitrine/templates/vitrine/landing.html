@@ -100,13 +100,26 @@
     position:sticky;top:0;z-index:50;background:rgba(6,20,41,0.84);backdrop-filter:blur(16px);
     border-bottom:1px solid rgba(255,255,255,0.08);
   }
-  .entete .conteneur{display:flex;align-items:center;justify-content:space-between;height:76px;}
-  .marque{display:flex;align-items:center;gap:10px;color:#fff;font-family:'Fraunces',serif;font-weight:700;font-size:20px;}
-  .marque img{width:36px;height:36px;border-radius:11px;box-shadow:0 8px 20px rgba(0,0,0,0.24);}
+  .entete .conteneur{display:flex;align-items:center;justify-content:space-between;height:76px;gap:10px;}
+  .marque{display:flex;align-items:center;gap:10px;color:#fff;font-family:'Fraunces',serif;font-weight:700;font-size:20px;flex-shrink:0;}
+  .marque img{width:36px;height:36px;border-radius:11px;box-shadow:0 8px 20px rgba(0,0,0,0.24);flex-shrink:0;}
   .nav-liens{display:flex;gap:28px;color:rgba(255,255,255,0.82);font-size:14.5px;font-weight:600;}
   .nav-liens a:hover{color:#fff;}
-  .entete-actions{display:flex;gap:12px;align-items:center;}
+  .entete-actions{display:flex;gap:12px;align-items:center;flex-shrink:0;}
   @media (max-width:920px){ .nav-liens{display:none;} }
+
+  /* --- petits écrans (téléphone) : en-tête compacté --- */
+  @media (max-width:480px){
+    .conteneur{padding:0 16px;}
+    .entete .conteneur{height:60px;}
+    .marque{font-size:15px;gap:7px;}
+    .marque img{width:28px;height:28px;border-radius:8px;}
+    .entete-actions{gap:6px;}
+    .entete-actions .bouton{padding:8px 12px;font-size:12px;border-radius:10px;white-space:nowrap;}
+  }
+  @media (max-width:360px){
+    .marque-texte{display:none;}
+  }
 
   /* --- sélecteur de langue : badge flottant, fixe sous l'en-tête --- */
   .langue-switch{
@@ -119,6 +132,10 @@
   .langue-switch a:hover{color:#fff;}
   .langue-switch a.actif{background:#fff;color:var(--bleu-nuit);}
   @media (max-width:920px){ .langue-switch{top:88px;right:16px;} }
+  @media (max-width:480px){
+    .langue-switch{top:70px;right:12px;padding:3px;}
+    .langue-switch a{padding:4px 9px;font-size:11px;}
+  }
 
   /* --- hero --- */
   .hero{
@@ -140,7 +157,17 @@
     box-shadow:var(--ombre-hero);
   }
   .hero-visuel img{width:100%;max-width:280px;filter:drop-shadow(0 18px 30px rgba(0,0,0,0.4));}
-  @media (max-width:920px){ .hero .conteneur{grid-template-columns:1fr;} .hero-visuel{order:-1;max-width:260px;margin:0 auto;padding:28px;} }
+  @media (max-width:920px){
+    .hero .conteneur{grid-template-columns:1fr;}
+    /* Le texte (accroche + CTA) passe avant le visuel décoratif : sur
+       téléphone, l'utilisateur doit voir la proposition de valeur et le
+       bouton de téléchargement sans défiler devant une grande image. */
+    .hero-visuel{max-width:260px;margin:32px auto 0;padding:28px;}
+  }
+  @media (max-width:480px){
+    .hero{padding:36px 0 56px;}
+    .hero-visuel{max-width:180px;padding:18px;margin-top:24px;}
+  }
 
   /* --- fade-in au scroll --- */
   .au-scroll{opacity:0;transform:translateY(18px);transition:opacity .6s ease, transform .6s ease;}
@@ -224,7 +251,7 @@
 
 <header class="entete">
   <div class="conteneur">
-    <a href="#" class="marque"><img src="{% static 'vitrine/images/logo.png' %}" alt="Logo AfriFlotte"> AfriFlotte</a>
+    <a href="#" class="marque"><img src="{% static 'vitrine/images/logo.png' %}" alt="Logo AfriFlotte"> <span class="marque-texte">AfriFlotte</span></a>
     <nav class="nav-liens">
       <a href="#comment-ca-marche">{{ t.nav_comment }}</a>
       <a href="#entreprises">{{ t.nav_entreprises }}</a>
