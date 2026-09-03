@@ -1,0 +1,50 @@
+# --- Python / Django ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+media/**
+!media/**/
+!media/**/.gitkeep
+
+# --- Secrets / config locale ---
+.env
+.env.*
+!.env.example
+
+# --- Flutter / Dart ---
+afriflotte_app/.dart_tool/
+afriflotte_app/.flutter-plugins
+afriflotte_app/.flutter-plugins-dependencies
+afriflotte_app/.packages
+afriflotte_app/build/
+afriflotte_app/ios/Flutter/.last_build_id
+afriflotte_app/linux/flutter/generated_plugin_registrant.cc
+afriflotte_app/macos/Flutter/GeneratedPluginRegistrant.swift
+afriflotte_app/windows/flutter/generated_plugin_registrant.cc
+afriflotte_app/**/*.iml
+afriflotte_app/.pub-cache/
+afriflotte_app/.pub/
+
+# --- IDE / OS ---
+.vscode/settings.json
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# --- Claude Code (config projet partagée, état local ignoré) ---
+.claude/settings.local.json
+.claude/worktrees/
+
+# --- Divers ---
+*.log
+node_modules/
+test_valid.png
+.claude/

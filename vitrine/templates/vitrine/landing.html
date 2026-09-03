@@ -1,0 +1,506 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="{{ langue }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ t.meta_titre }}</title>
+<meta name="description" content="{{ t.meta_description }}">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="{{ request.scheme }}://{{ request.get_host }}/">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AfriFlotte">
+<meta property="og:title" content="{{ t.meta_titre }}">
+<meta property="og:description" content="{{ t.og_description }}">
+<meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{% static 'vitrine/images/logo.png' %}">
+<meta property="og:locale" content="{{ t.og_locale }}">
+<meta name="twitter:card" content="summary">
+
+<link rel="icon" type="image/png" href="{% static 'vitrine/images/logo.png' %}">
+<link rel="apple-touch-icon" href="{% static 'vitrine/images/logo.png' %}">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+
+<script type="application/ld+json">{{ donnees_structurees }}</script>
+
+<style>
+  :root{
+    --bleu-fonce:#061429;
+    --bleu-nuit:#0F2D5C;
+    --bleu-accent:#1D4ED8;
+    --bleu-ciel:#5DD6FF;
+    --bleu-clair:#EAF3FF;
+    --texte:#122033;
+    --texte-doux:#5F7087;
+    --fond:#F4F7FB;
+    --succes:#16A34A;
+    --rayon:20px;
+    --ombre:0 18px 48px rgba(7,26,58,0.10);
+    --ombre-hero:0 30px 90px rgba(6,20,41,0.35);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    font-family:'Manrope',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    color:var(--texte);
+    background:
+      radial-gradient(circle at top left, rgba(93,214,255,0.12), transparent 30%),
+      radial-gradient(circle at top right, rgba(29,78,216,0.08), transparent 22%),
+      var(--fond);
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:'Fraunces',Georgia,serif;margin:0;letter-spacing:-0.02em;}
+  img{max-width:100%;display:block;}
+  a{text-decoration:none;color:inherit;}
+  .conteneur{max-width:1180px;margin:0 auto;padding:0 24px;}
+  .section{padding:88px 0;}
+  .section-titre{font-size:clamp(26px,3.4vw,38px);font-weight:800;text-align:center;margin-bottom:14px;}
+  .section-soustitre{text-align:center;color:var(--texte-doux);max-width:640px;margin:0 auto 56px;font-size:16.5px;line-height:1.6;}
+
+  /* --- boutons --- */
+  .bouton{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:14px 26px;border-radius:14px;font-weight:700;font-size:15px;
+    border:1.5px solid transparent;cursor:pointer;transition:transform .18s ease, box-shadow .18s ease, background .18s ease;
+    white-space:nowrap;
+  }
+  .bouton:hover{transform:translateY(-2px);}
+  .bouton-primaire{background:linear-gradient(135deg,var(--bleu-accent),var(--bleu-ciel));color:#fff;box-shadow:0 14px 28px rgba(29,78,216,0.26);}
+  .bouton-primaire:hover{filter:saturate(1.04) brightness(1.02);}
+  .bouton-fantome{background:rgba(255,255,255,0.08);color:#fff;border-color:rgba(255,255,255,0.35);}
+  .bouton-fantome:hover{background:rgba(255,255,255,0.16);}
+  .bouton-contour{background:#fff;color:var(--bleu-nuit);border-color:#DCE4F5;box-shadow:var(--ombre);}
+  .bouton-contour:hover{border-color:var(--bleu-accent);}
+  .bouton-desactive{background:#E7ECF6;color:#93A0B8;cursor:not-allowed;}
+  .bouton-desactive:hover{transform:none;}
+  .groupe-boutons{display:flex;flex-wrap:wrap;gap:14px;}
+
+  /* --- bouton de téléchargement (badge style app store) --- */
+  .bouton-telecharger{
+    background:#0B1220;color:#fff;padding:12px 26px 12px 16px;border-radius:16px;
+    border:1.5px solid rgba(255,255,255,0.14);gap:13px;
+    box-shadow:var(--ombre-hero);
+  }
+  .bouton-telecharger:hover{background:#161F33;box-shadow:0 22px 48px rgba(0,0,0,0.45);}
+  .bouton-telecharger-icone{width:28px;height:28px;flex-shrink:0;color:var(--bleu-ciel);}
+  .bouton-telecharger-texte{display:flex;flex-direction:column;align-items:flex-start;line-height:1.2;}
+  .bouton-telecharger-texte small{font-size:11px;font-weight:500;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:.05em;}
+  .bouton-telecharger-texte strong{font-size:17px;font-weight:700;}
+  .bouton-telecharger.bouton-desactive{background:#E7ECF6;border-color:#DCE4F5;box-shadow:none;}
+  .bouton-telecharger.bouton-desactive .bouton-telecharger-icone{color:#93A0B8;}
+  .bouton-telecharger.bouton-desactive .bouton-telecharger-texte small{color:#93A0B8;}
+  .bouton-telecharger.bouton-desactive .bouton-telecharger-texte strong{color:#5B6982;}
+
+  /* --- en-tête --- */
+  .entete{
+    position:sticky;top:0;z-index:50;background:rgba(6,20,41,0.84);backdrop-filter:blur(16px);
+    border-bottom:1px solid rgba(255,255,255,0.08);
+  }
+  .entete .conteneur{display:flex;align-items:center;justify-content:space-between;height:76px;}
+  .marque{display:flex;align-items:center;gap:10px;color:#fff;font-family:'Fraunces',serif;font-weight:700;font-size:20px;}
+  .marque img{width:36px;height:36px;border-radius:11px;box-shadow:0 8px 20px rgba(0,0,0,0.24);}
+  .nav-liens{display:flex;gap:28px;color:rgba(255,255,255,0.82);font-size:14.5px;font-weight:600;}
+  .nav-liens a:hover{color:#fff;}
+  .entete-actions{display:flex;gap:12px;align-items:center;}
+  @media (max-width:920px){ .nav-liens{display:none;} }
+
+  /* --- sélecteur de langue : badge flottant, fixe sous l'en-tête --- */
+  .langue-switch{
+    position:fixed;top:96px;right:24px;z-index:45;
+    display:flex;gap:2px;background:var(--bleu-nuit);
+    border:1px solid rgba(255,255,255,0.18);border-radius:999px;padding:4px;
+    box-shadow:0 12px 28px rgba(6,20,41,0.4);
+  }
+  .langue-switch a{padding:6px 13px;border-radius:999px;font-size:12.5px;font-weight:700;color:rgba(255,255,255,0.65);letter-spacing:.02em;}
+  .langue-switch a:hover{color:#fff;}
+  .langue-switch a.actif{background:#fff;color:var(--bleu-nuit);}
+  @media (max-width:920px){ .langue-switch{top:88px;right:16px;} }
+
+  /* --- hero --- */
+  .hero{
+    background:radial-gradient(1100px 520px at 85% -10%, rgba(93,214,255,0.22), transparent),
+               linear-gradient(160deg, var(--bleu-fonce), var(--bleu-nuit));
+    color:#fff;padding:96px 0 110px;overflow:hidden;position:relative;
+  }
+  .hero .conteneur{display:grid;grid-template-columns:1.15fr 0.85fr;gap:56px;align-items:center;}
+  .hero-eyebrow{display:inline-block;padding:6px 14px;border-radius:999px;background:rgba(255,255,255,0.1);
+    border:1px solid rgba(255,255,255,0.18);font-size:12.5px;letter-spacing:0.06em;text-transform:uppercase;
+    color:#BFD3FF;margin-bottom:22px;}
+  .hero h1{font-size:clamp(40px,5.2vw,64px);font-weight:700;line-height:1.02;letter-spacing:-0.03em;}
+  .hero-accroche{font-size:clamp(17px,2vw,21px);color:#D9E4FF;margin-top:18px;font-weight:500;}
+  .hero-texte{color:rgba(255,255,255,0.72);margin-top:16px;line-height:1.7;max-width:520px;}
+  .hero-boutons{margin-top:34px;}
+  .hero-visuel{
+    background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:32px;
+    padding:44px;display:flex;align-items:center;justify-content:center;
+    box-shadow:var(--ombre-hero);
+  }
+  .hero-visuel img{width:100%;max-width:280px;filter:drop-shadow(0 18px 30px rgba(0,0,0,0.4));}
+  @media (max-width:920px){ .hero .conteneur{grid-template-columns:1fr;} .hero-visuel{order:-1;max-width:260px;margin:0 auto;padding:28px;} }
+
+  /* --- fade-in au scroll --- */
+  .au-scroll{opacity:0;transform:translateY(18px);transition:opacity .6s ease, transform .6s ease;}
+  .au-scroll.visible{opacity:1;transform:none;}
+
+  /* --- comment ça marche --- */
+  .etapes{display:grid;grid-template-columns:repeat(3,1fr);gap:26px;}
+  .etape{background:linear-gradient(180deg,#fff, #FBFDFF);border:1px solid #E7EEF8;border-radius:var(--rayon);padding:28px;box-shadow:var(--ombre);}
+  .etape-numero{width:38px;height:38px;border-radius:12px;background:var(--bleu-clair);color:var(--bleu-accent);
+    display:flex;align-items:center;justify-content:center;font-weight:800;margin-bottom:16px;}
+  .etape svg{width:26px;height:26px;color:var(--bleu-accent);margin-bottom:14px;}
+  .etape h3{font-size:16.5px;margin-bottom:8px;}
+  .etape p{color:var(--texte-doux);font-size:14.5px;line-height:1.6;margin:0;}
+  @media (max-width:860px){ .etapes{grid-template-columns:1fr 1fr;} }
+  @media (max-width:560px){ .etapes{grid-template-columns:1fr;} }
+
+  /* --- avantages (entreprises / transporteurs) --- */
+  .avantages{display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center;}
+  .avantages.inverse .avantages-liste{order:2;}
+  .avantages.inverse .avantages-carte{order:1;}
+  .avantages-liste ul{list-style:none;margin:22px 0 0;padding:0;display:grid;gap:14px;}
+  .avantages-liste li{display:flex;gap:12px;align-items:flex-start;font-size:15.5px;color:var(--texte);}
+  .avantages-liste li svg{flex:none;width:20px;height:20px;color:var(--succes);margin-top:2px;}
+  .avantages-carte{
+    background:linear-gradient(160deg,var(--bleu-nuit),var(--bleu-fonce));border-radius:28px;padding:44px;
+    color:#fff;min-height:280px;display:flex;flex-direction:column;justify-content:center;gap:10px;
+  }
+  .avantages-carte .chiffre{font-family:'Poppins',sans-serif;font-size:44px;font-weight:800;}
+  .avantages-carte .legende{color:#BFD3FF;font-size:14.5px;}
+  .avantages-carte hr{border:none;border-top:1px solid rgba(255,255,255,0.14);margin:18px 0;}
+  @media (max-width:860px){ .avantages, .avantages.inverse{grid-template-columns:1fr;} .avantages.inverse .avantages-liste,.avantages.inverse .avantages-carte{order:initial;} }
+
+  /* --- types de transport --- */
+  .grille-camions{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;}
+  .carte-camion{background:#fff;border:1px solid #EAEFF9;border-radius:18px;padding:22px 18px;text-align:center;box-shadow:var(--ombre);}
+  .carte-camion svg{width:30px;height:30px;color:var(--bleu-accent);margin:0 auto 12px;}
+  .carte-camion span{font-size:14px;font-weight:600;}
+  @media (max-width:860px){ .grille-camions{grid-template-columns:repeat(2,1fr);} }
+
+  /* --- couverture --- */
+  .couverture-bloc{background:linear-gradient(160deg,var(--bleu-nuit),var(--bleu-fonce));border-radius:32px;padding:56px;color:#fff;}
+  .couverture-bloc h2{color:#fff;}
+  .couverture-bloc .section-soustitre{color:#BFD3FF;}
+  .pays-grille{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:32px;}
+  .pays-pastille{padding:9px 16px;border-radius:999px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.16);font-size:14px;}
+
+  /* --- sécurité / paiement --- */
+  .cartes-paiement{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:20px;}
+  .carte-paiement{background:#fff;border:1px solid #EAEFF9;border-radius:24px;padding:30px;box-shadow:var(--ombre);}
+  .carte-paiement svg{width:28px;height:28px;color:var(--bleu-accent);margin-bottom:14px;}
+  .carte-paiement h3{font-size:17px;margin-bottom:10px;}
+  .carte-paiement p{color:var(--texte-doux);font-size:14.5px;line-height:1.65;margin:0;}
+  @media (max-width:760px){ .cartes-paiement{grid-template-columns:1fr;} }
+
+  /* --- téléchargement --- */
+  .telechargement{
+    background:#fff;border:1px solid #EAEFF9;border-radius:32px;padding:56px;box-shadow:var(--ombre);
+    display:flex;align-items:center;justify-content:space-between;gap:40px;flex-wrap:wrap;
+  }
+  .telechargement-texte h2{font-size:26px;margin-bottom:8px;}
+  .telechargement-texte p{color:var(--texte-doux);margin:0;max-width:420px;}
+  .telechargement-meta{font-size:13px;color:var(--texte-doux);margin-top:10px;}
+
+  /* --- CTA final --- */
+  .cta-final{
+    background:radial-gradient(900px 420px at 20% 0%, rgba(93,214,255,0.2), transparent),
+               linear-gradient(160deg,var(--bleu-fonce),var(--bleu-nuit));
+    color:#fff;text-align:center;padding:100px 0;
+  }
+  .cta-final h2{color:#fff;font-size:clamp(28px,4vw,42px);}
+  .cta-final .groupe-boutons{justify-content:center;margin-top:34px;}
+
+  /* --- pied de page --- */
+  .pied{background:var(--bleu-fonce);color:rgba(255,255,255,0.55);padding:36px 0;font-size:13.5px;}
+  .pied .conteneur{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;}
+  .pied-marque{display:flex;align-items:center;gap:8px;color:rgba(255,255,255,0.85);font-weight:600;}
+  .pied-marque img{width:22px;height:22px;border-radius:6px;}
+</style>
+</head>
+<body>
+
+<header class="entete">
+  <div class="conteneur">
+    <a href="#" class="marque"><img src="{% static 'vitrine/images/logo.png' %}" alt="Logo AfriFlotte"> AfriFlotte</a>
+    <nav class="nav-liens">
+      <a href="#comment-ca-marche">{{ t.nav_comment }}</a>
+      <a href="#entreprises">{{ t.nav_entreprises }}</a>
+      <a href="#transporteurs">{{ t.nav_transporteurs }}</a>
+      <a href="#couverture">{{ t.nav_couverture }}</a>
+      <a href="#securite">{{ t.nav_securite }}</a>
+    </nav>
+    <div class="entete-actions">
+      <a href="{{ flutter_app_url }}" class="bouton bouton-fantome">{{ t.btn_connexion }}</a>
+      <a href="{{ flutter_app_url }}?inscription=1" class="bouton bouton-primaire">{{ t.btn_inscription }}</a>
+    </div>
+  </div>
+</header>
+
+<div class="langue-switch">
+  <a href="?lang=fr" class="{% if langue == 'fr' %}actif{% endif %}">FR</a>
+  <a href="?lang=en" class="{% if langue == 'en' %}actif{% endif %}">EN</a>
+</div>
+
+<section class="hero">
+  <div class="conteneur">
+    <div>
+      <span class="hero-eyebrow">{{ t.hero_eyebrow }}</span>
+      <h1>AfriFlotte</h1>
+      <p class="hero-accroche">{{ t.hero_accroche }}</p>
+      <p class="hero-texte">{{ t.hero_texte }}</p>
+      <div class="groupe-boutons hero-boutons">
+        <a href="#telecharger" class="bouton bouton-telecharger" aria-label="{{ t.telecharger_aria }}">
+          <svg class="bouton-telecharger-icone" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.48l1.84-3.18a.641.641 0 00-.23-.87.633.633 0 00-.86.23l-1.87 3.23A9.584 9.584 0 0012 8.16c-1.64 0-3.17.38-4.48 1.03L5.65 5.96a.633.633 0 00-.86-.23.641.641 0 00-.23.87L6.4 9.48C3.8 11.13 2.07 13.95 2 17.14h20c-.07-3.19-1.8-6.01-4.4-7.66zM7 15.09a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/></svg>
+          <span class="bouton-telecharger-texte"><small>{{ t.telecharger_sur }}</small><strong>Android</strong></span>
+        </a>
+      </div>
+    </div>
+    <div class="hero-visuel au-scroll">
+      <img src="{% static 'vitrine/images/logo.png' %}" alt="{{ t.hero_visuel_alt }}">
+    </div>
+  </div>
+</section>
+
+<section class="section" id="comment-ca-marche">
+  <div class="conteneur">
+    <h2 class="section-titre au-scroll">{{ t.cc_titre }}</h2>
+    <p class="section-soustitre au-scroll">{{ t.cc_soustitre }}</p>
+    <div class="etapes">
+      <div class="etape au-scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1Z"/><rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 12h6M9 16h6"/></svg>
+        <div class="etape-numero">1</div>
+        <h3>{{ t.etape1_titre }}</h3>
+        <p>{{ t.etape1_texte }}</p>
+      </div>
+      <div class="etape au-scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+        <div class="etape-numero">2</div>
+        <h3>{{ t.etape2_titre }}</h3>
+        <p>{{ t.etape2_texte }}</p>
+      </div>
+      <div class="etape au-scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+        <div class="etape-numero">3</div>
+        <h3>{{ t.etape3_titre }}</h3>
+        <p>{{ t.etape3_texte }}</p>
+      </div>
+      <div class="etape au-scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg>
+        <div class="etape-numero">4</div>
+        <h3>{{ t.etape4_titre }}</h3>
+        <p>{{ t.etape4_texte }}</p>
+      </div>
+      <div class="etape au-scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+        <div class="etape-numero">5</div>
+        <h3>{{ t.etape5_titre }}</h3>
+        <p>{{ t.etape5_texte }}</p>
+      </div>
+      <div class="etape au-scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <div class="etape-numero">6</div>
+        <h3>{{ t.etape6_titre }}</h3>
+        <p>{{ t.etape6_texte }}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="entreprises" style="background:#fff;">
+  <div class="conteneur">
+    <div class="avantages">
+      <div class="avantages-liste au-scroll">
+        <h2 class="section-titre" style="text-align:left;">{{ t.entreprises_titre }}</h2>
+        <p style="color:var(--texte-doux);margin-top:10px;">{{ t.entreprises_soustitre }}</p>
+        <ul>
+          <li>{% include "vitrine/_check.html" %}{{ t.entreprises_li1 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.entreprises_li2 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.entreprises_li3 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.entreprises_li4 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.entreprises_li5 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.entreprises_li6 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.entreprises_li7 }}</li>
+        </ul>
+      </div>
+      <div class="avantages-carte au-scroll">
+        <span class="legende">{{ t.entreprises_carte_legende1 }}</span>
+        <span class="chiffre">100%</span>
+        <span class="legende">{{ t.entreprises_carte_legende2 }}</span>
+        <hr>
+        <span class="legende">{{ t.entreprises_carte_legende3 }}</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="transporteurs">
+  <div class="conteneur">
+    <div class="avantages inverse">
+      <div class="avantages-liste au-scroll">
+        <h2 class="section-titre" style="text-align:left;">{{ t.transporteurs_titre }}</h2>
+        <p style="color:var(--texte-doux);margin-top:10px;">{{ t.transporteurs_soustitre }}</p>
+        <ul>
+          <li>{% include "vitrine/_check.html" %}{{ t.transporteurs_li1 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.transporteurs_li2 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.transporteurs_li3 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.transporteurs_li4 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.transporteurs_li5 }}</li>
+          <li>{% include "vitrine/_check.html" %}{{ t.transporteurs_li6 }}</li>
+        </ul>
+      </div>
+      <div class="avantages-carte au-scroll">
+        <span class="legende">{{ t.transporteurs_carte_legende1 }}</span>
+        <span class="chiffre">+</span>
+        <span class="legende">{{ t.transporteurs_carte_legende2 }}</span>
+        <hr>
+        <span class="legende">{{ t.transporteurs_carte_legende3 }}</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="background:#fff;">
+  <div class="conteneur">
+    <h2 class="section-titre au-scroll">{{ t.camions_titre }}</h2>
+    <p class="section-soustitre au-scroll">{{ t.camions_soustitre }}</p>
+    <div class="grille-camions">
+      <div class="carte-camion au-scroll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V6a1 1 0 0 1 1-1h9v11"/><path d="M13 9h4l3 3v4h-3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><span>{{ t.camion_citerne }}</span></div>
+      <div class="carte-camion au-scroll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V6a1 1 0 0 1 1-1h9v11"/><path d="M13 9h4l3 3v4h-3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><span>{{ t.camion_benne }}</span></div>
+      <div class="carte-camion au-scroll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V6a1 1 0 0 1 1-1h9v11"/><path d="M13 9h4l3 3v4h-3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><span>{{ t.camion_plateau }}</span></div>
+      <div class="carte-camion au-scroll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V6a1 1 0 0 1 1-1h9v11"/><path d="M13 9h4l3 3v4h-3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><span>{{ t.camion_conteneur }}</span></div>
+      <div class="carte-camion au-scroll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V6a1 1 0 0 1 1-1h9v11"/><path d="M13 9h4l3 3v4h-3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><span>{{ t.camion_6roues }}</span></div>
+      <div class="carte-camion au-scroll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V6a1 1 0 0 1 1-1h9v11"/><path d="M13 9h4l3 3v4h-3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><span>{{ t.camion_10roues }}</span></div>
+      <div class="carte-camion au-scroll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V6a1 1 0 0 1 1-1h9v11"/><path d="M13 9h4l3 3v4h-3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><span>{{ t.camion_12roues }}</span></div>
+      <div class="carte-camion au-scroll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V6a1 1 0 0 1 1-1h9v11"/><path d="M13 9h4l3 3v4h-3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><span>{{ t.camion_semi }}</span></div>
+      <div class="carte-camion au-scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+        <span>{{ t.camion_autres }}</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="couverture">
+  <div class="conteneur">
+    <div class="couverture-bloc au-scroll">
+      <h2 class="section-titre">{{ t.couverture_titre }}</h2>
+      <p class="section-soustitre">{{ t.couverture_soustitre }}</p>
+      <div class="pays-grille">
+        {% for pays in pays_cedeao %}
+        <span class="pays-pastille">{{ pays }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="securite" style="background:#fff;">
+  <div class="conteneur">
+    <h2 class="section-titre au-scroll">{{ t.securite_titre }}</h2>
+    <p class="section-soustitre au-scroll">{{ t.securite_soustitre }}</p>
+    <div class="cartes-paiement">
+      <div class="carte-paiement au-scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <h3>{{ t.securite_carte1_titre }}</h3>
+        <p>{{ t.securite_carte1_texte }}</p>
+      </div>
+      <div class="carte-paiement au-scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <h3>{{ t.securite_carte2_titre }}</h3>
+        <p>{{ t.securite_carte2_texte }}</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="telecharger">
+  <div class="conteneur">
+    <div class="telechargement au-scroll">
+      <div class="telechargement-texte">
+        <h2>{{ t.telechargement_titre }}</h2>
+        <p>{{ t.telechargement_texte }}</p>
+        {% if apk_disponible %}
+        <p class="telechargement-meta">{% if apk_version %}{{ t.telechargement_version_label }} {{ apk_version }} · {% endif %}Android</p>
+        {% else %}
+        <p class="telechargement-meta">{{ t.telechargement_bientot }}</p>
+        {% endif %}
+      </div>
+      {% if apk_disponible %}
+      <a href="{{ apk_url }}" class="bouton bouton-telecharger" aria-label="{{ t.telecharger_aria }}">
+        <svg class="bouton-telecharger-icone" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.48l1.84-3.18a.641.641 0 00-.23-.87.633.633 0 00-.86.23l-1.87 3.23A9.584 9.584 0 0012 8.16c-1.64 0-3.17.38-4.48 1.03L5.65 5.96a.633.633 0 00-.86-.23.641.641 0 00-.23.87L6.4 9.48C3.8 11.13 2.07 13.95 2 17.14h20c-.07-3.19-1.8-6.01-4.4-7.66zM7 15.09a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/></svg>
+        <span class="bouton-telecharger-texte"><small>{{ t.telecharger_sur }}</small><strong>Android</strong></span>
+      </a>
+      {% else %}
+      <span class="bouton bouton-telecharger bouton-desactive" title="{{ t.telecharger_titre_desactive }}" aria-label="{{ t.telecharger_aria_bientot }}">
+        <svg class="bouton-telecharger-icone" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.48l1.84-3.18a.641.641 0 00-.23-.87.633.633 0 00-.86.23l-1.87 3.23A9.584 9.584 0 0012 8.16c-1.64 0-3.17.38-4.48 1.03L5.65 5.96a.633.633 0 00-.86-.23.641.641 0 00-.23.87L6.4 9.48C3.8 11.13 2.07 13.95 2 17.14h20c-.07-3.19-1.8-6.01-4.4-7.66zM7 15.09a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/></svg>
+        <span class="bouton-telecharger-texte"><small>{{ t.bientot_sur }}</small><strong>Android</strong></span>
+      </span>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="cta-final">
+  <div class="conteneur">
+    <h2 class="au-scroll">{{ t.cta_titre }}</h2>
+    <div class="groupe-boutons au-scroll">
+      <a href="{{ flutter_app_url }}?inscription=1" class="bouton bouton-primaire">{{ t.btn_inscription }}</a>
+      <a href="{{ flutter_app_url }}" class="bouton bouton-fantome">{{ t.btn_connexion }}</a>
+      <a href="#telecharger" class="bouton bouton-telecharger" aria-label="{{ t.telecharger_aria }}">
+        <svg class="bouton-telecharger-icone" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.48l1.84-3.18a.641.641 0 00-.23-.87.633.633 0 00-.86.23l-1.87 3.23A9.584 9.584 0 0012 8.16c-1.64 0-3.17.38-4.48 1.03L5.65 5.96a.633.633 0 00-.86-.23.641.641 0 00-.23.87L6.4 9.48C3.8 11.13 2.07 13.95 2 17.14h20c-.07-3.19-1.8-6.01-4.4-7.66zM7 15.09a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm10 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/></svg>
+        <span class="bouton-telecharger-texte"><small>{{ t.telecharger_sur }}</small><strong>Android</strong></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer class="pied">
+  <div class="conteneur">
+    <span class="pied-marque"><img src="{% static 'vitrine/images/logo.png' %}" alt="AfriFlotte"> AfriFlotte</span>
+    <span>© {{ annee_courante }} AfriFlotte — {{ t.footer_region }}</span>
+  </div>
+</footer>
+
+<script>
+  // Aligne la langue de l'app Flutter (clé "langue_app", lue par
+  // LocaleController au démarrage) sur celle choisie ici, avant toute
+  // navigation vers l'app — le loader et l'app démarrent donc directement
+  // dans la bonne langue. shared_preferences_web encode chaque valeur en
+  // JSON dans localStorage (`json.encode`) : une String doit donc être
+  // écrite entre guillemets (JSON.stringify), pas en clair.
+  try {
+    window.localStorage.setItem('flutter.langue_app', JSON.stringify('{{ langue }}'));
+  } catch (e) { /* localStorage indisponible : l'app gardera son choix précédent */ }
+
+  // Utilisateur déjà connecté (token Flutter présent en localStorage, posé
+  // par shared_preferences_web sous "flutter.<clé>") : on ne lui montre pas
+  // la vitrine, direction l'app. Un token expiré ne casse rien : l'app
+  // Flutter revérifie elle-même via /profil/ et renvoie vers la connexion.
+  try {
+    if (window.localStorage.getItem('flutter.access_token')) {
+      window.location.replace("{{ flutter_app_url }}");
+    }
+  } catch (e) { /* localStorage indisponible (navigation privée stricte...) : on affiche la vitrine */ }
+
+  // Animation légère au scroll, sans dépendance externe.
+  var elements = document.querySelectorAll('.au-scroll');
+  if ('IntersectionObserver' in window) {
+    var observateur = new IntersectionObserver(function(entrees) {
+      entrees.forEach(function(entree) {
+        if (entree.isIntersecting) {
+          entree.target.classList.add('visible');
+          observateur.unobserve(entree.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    elements.forEach(function(el) { observateur.observe(el); });
+  } else {
+    elements.forEach(function(el) { el.classList.add('visible'); });
+  }
+</script>
+
+</body>
+</html>
