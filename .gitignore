@@ -18,6 +18,11 @@ media/**
 .env.*
 !.env.example
 
+# Export dumpdata contenant des hachages de mot de passe/numéros de
+# téléphone réels — jamais commité, à supprimer une fois la migration vers
+# PostgreSQL terminée.
+data_migration.json
+
 # --- Flutter / Dart ---
 afriflotte_app/.dart_tool/
 afriflotte_app/.flutter-plugins
