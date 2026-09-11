@@ -115,6 +115,7 @@ class PayDunyaGatewayAdapter(GatewayPaiement):
             "Content-Type": "application/json",
             "PAYDUNYA-MASTER-KEY": settings.PAYDUNYA_MASTER_KEY,
             "PAYDUNYA-PRIVATE-KEY": settings.PAYDUNYA_PRIVATE_KEY,
+            "PAYDUNYA-PUBLIC-KEY": settings.PAYDUNYA_PUBLIC_KEY,
             "PAYDUNYA-TOKEN": settings.PAYDUNYA_TOKEN,
         }
 
