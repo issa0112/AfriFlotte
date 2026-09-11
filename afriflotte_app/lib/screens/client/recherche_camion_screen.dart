@@ -161,7 +161,9 @@ class _RechercheCamionScreenState extends State<RechercheCamionScreen> {
           child: Text(
             l10n.rechercheCamionChooseType,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.black54),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       );
@@ -293,7 +295,9 @@ class _FiltresCard extends StatelessWidget {
                           )
                         : l10n.rechercheCamionPositionUndefined,
                     style: TextStyle(
-                      color: positionDefinie ? Colors.black87 : Colors.black54,
+                      color: positionDefinie
+                          ? Theme.of(context).colorScheme.onSurface
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 13,
                     ),
                   ),
@@ -350,6 +354,15 @@ class _CamionResultCard extends StatelessWidget {
 
   const _CamionResultCard({required this.camion});
 
+  Widget _iconeCamionPlaceholder() {
+    return Container(
+      width: 44,
+      height: 44,
+      color: const Color(0xFF102C5C).withValues(alpha: 0.1),
+      child: const Icon(Icons.local_shipping, color: Color(0xFF102C5C)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -370,7 +383,18 @@ class _CamionResultCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.local_shipping, color: Color(0xFF102C5C)),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: camion.imagePrincipaleUrl != null
+                      ? Image.network(
+                          camion.imagePrincipaleUrl!,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _iconeCamionPlaceholder(),
+                        )
+                      : _iconeCamionPlaceholder(),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -382,9 +406,9 @@ class _CamionResultCard extends StatelessWidget {
                       ),
                       Text(
                         '${camion.marque} ${camion.modele} · ${camion.typeCamion}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: Colors.black54,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],

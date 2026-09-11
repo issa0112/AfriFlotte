@@ -1,30 +1,53 @@
+import 'camion.dart' show CamionImage;
+
 /// Un camion (et éventuellement un chauffeur) proposé pour une demande,
 /// tel que renvoyé par `/api/propositions/` (voir `PropositionCamionSerializer`).
 class PropositionCamionInfo {
   final int camionId;
   final String camionImmatriculation;
+  final List<CamionImage> camionImages;
   final int? chauffeurId;
   final String? chauffeurNom;
+  final String? chauffeurPhoto;
 
   const PropositionCamionInfo({
     required this.camionId,
     required this.camionImmatriculation,
+    this.camionImages = const [],
     this.chauffeurId,
     this.chauffeurNom,
+    this.chauffeurPhoto,
   });
 
+  /// Photo à afficher en miniature : celle marquée `principale`, sinon la
+  /// première — même résolution que `Camion.imagePrincipaleUrl`.
+  CamionImage? get imagePrincipale {
+    if (camionImages.isEmpty) return null;
+    final principale = camionImages.where((image) => image.principale);
+    return principale.isNotEmpty ? principale.first : camionImages.first;
+  }
+
   factory PropositionCamionInfo.fromJson(Map<String, dynamic> json) {
+    final imagesJson = json['camion_images'];
+
     return PropositionCamionInfo(
       camionId: json['camion'] is int
           ? json['camion'] as int
           : int.parse('${json['camion']}'),
       camionImmatriculation: json['camion_immatriculation']?.toString() ?? '',
+      camionImages: imagesJson is List
+          ? imagesJson
+                .whereType<Map<String, dynamic>>()
+                .map(CamionImage.fromJson)
+                .toList()
+          : const [],
       chauffeurId: json['chauffeur'] == null
           ? null
           : (json['chauffeur'] is int
                 ? json['chauffeur'] as int
                 : int.tryParse('${json['chauffeur']}')),
       chauffeurNom: json['chauffeur_nom']?.toString(),
+      chauffeurPhoto: json['chauffeur_photo']?.toString(),
     );
   }
 }

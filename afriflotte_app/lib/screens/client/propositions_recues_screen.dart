@@ -4,6 +4,7 @@ import '../../constants/statut_style.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../../models/proposition.dart';
 import '../../services/proposition_service.dart';
+import '../../widgets/camion_chauffeur_apercu.dart';
 
 const _bleuNuit = Color(0xFF102C5C);
 const _bleuAccent = Color(0xFF2563EB);
@@ -38,6 +39,7 @@ class PropositionsRecuesScreen extends StatefulWidget {
 class _PropositionsRecuesScreenState extends State<PropositionsRecuesScreen> {
   late Future<List<Proposition>> _futurePropositions;
   late String _filtre;
+  final TextEditingController _searchController = TextEditingController();
 
   // Verrouille une carte pendant l'appel réseau pour éviter un double-tap
   // sur Accepter/Refuser (l'un créerait une mission, l'autre échouerait sur
@@ -51,6 +53,29 @@ class _PropositionsRecuesScreenState extends State<PropositionsRecuesScreen> {
     super.initState();
     _filtre = widget.highlightId != null ? 'TOUTES' : 'EN_ATTENTE';
     _futurePropositions = PropositionService.getPropositions(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Rechercher...',
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
   }
 
   void _verifierPresenceHighlight(List<Proposition> propositions) {
@@ -76,8 +101,16 @@ class _PropositionsRecuesScreenState extends State<PropositionsRecuesScreen> {
   }
 
   List<Proposition> _appliquerFiltre(List<Proposition> propositions) {
-    if (_filtre == 'TOUTES') return propositions;
-    return propositions.where((p) => p.statut == _filtre).toList();
+    final query = _searchController.text.trim().toLowerCase();
+
+    return propositions.where((p) {
+      final statutOk = _filtre == 'TOUTES' || p.statut == _filtre;
+      final texteOk =
+          query.isEmpty ||
+          p.transporteurNom.toLowerCase().contains(query) ||
+          p.trajet.toLowerCase().contains(query);
+      return statutOk && texteOk;
+    }).toList();
   }
 
   Future<void> _accepter(Proposition proposition) async {
@@ -213,6 +246,10 @@ class _PropositionsRecuesScreenState extends State<PropositionsRecuesScreen> {
             onRefresh: _rafraichir,
             child: Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: _buildSearchField(),
+                ),
                 _FiltreBar(
                   filtres: filtres,
                   selection: _filtre,
@@ -466,6 +503,20 @@ class _PropositionCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (proposition.camions.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  ...proposition.camions.map(
+                    (c) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: CamionChauffeurApercu(
+                        camionImmatriculation: c.camionImmatriculation,
+                        camionImages: c.camionImages,
+                        chauffeurNom: c.chauffeurNom,
+                        chauffeurPhoto: c.chauffeurPhoto,
+                      ),
+                    ),
+                  ),
+                ],
                 if (proposition.message != null &&
                     proposition.message!.trim().isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -493,7 +544,11 @@ class _PropositionCard extends StatelessWidget {
                         const SizedBox(height: 3),
                         Text(
                           proposition.message!,
-                          style: const TextStyle(fontSize: 13, height: 1.3),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.3,
+                            color: Colors.black87,
+                          ),
                         ),
                       ],
                     ),

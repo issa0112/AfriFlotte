@@ -1,3 +1,5 @@
+import 'camion.dart' show CamionImage;
+
 /// Position résolue d'un camion renvoyée par `/api/recherche-camions/`
 /// (voir `resoudre_position_camion` côté Django) : GPS propre du camion,
 /// sinon celui du chauffeur affecté, sinon une valeur statique.
@@ -42,12 +44,14 @@ class ChauffeurResume {
   final String nom;
   final String telephone;
   final String pays;
+  final String? photo;
 
   const ChauffeurResume({
     required this.id,
     required this.nom,
     required this.telephone,
     this.pays = 'ML',
+    this.photo,
   });
 
   factory ChauffeurResume.fromJson(Map<String, dynamic> json) {
@@ -56,6 +60,7 @@ class ChauffeurResume {
       nom: json['nom']?.toString() ?? '',
       telephone: json['telephone']?.toString() ?? '',
       pays: json['pays']?.toString() ?? 'ML',
+      photo: json['photo']?.toString(),
     );
   }
 }
@@ -78,6 +83,7 @@ class CamionRecherche {
   final PositionResolue? position;
   final double? distanceKm;
   final ChauffeurResume? chauffeurActuel;
+  final List<CamionImage> images;
 
   const CamionRecherche({
     required this.id,
@@ -93,11 +99,21 @@ class CamionRecherche {
     this.position,
     this.distanceKm,
     this.chauffeurActuel,
+    this.images = const [],
   });
+
+  /// Même résolution que `Camion.imagePrincipaleUrl` : la photo marquée
+  /// `principale`, sinon la première, sinon `null` si le camion n'en a pas.
+  String? get imagePrincipaleUrl {
+    if (images.isEmpty) return null;
+    final principale = images.where((image) => image.principale);
+    return principale.isNotEmpty ? principale.first.url : images.first.url;
+  }
 
   factory CamionRecherche.fromJson(Map<String, dynamic> json) {
     final positionJson = json['position'];
     final chauffeurJson = json['chauffeur_actuel'];
+    final imagesJson = json['images'];
 
     return CamionRecherche(
       id: json['id'] is int ? json['id'] as int : int.parse('${json['id']}'),
@@ -119,6 +135,12 @@ class CamionRecherche {
       chauffeurActuel: chauffeurJson is Map<String, dynamic>
           ? ChauffeurResume.fromJson(chauffeurJson)
           : null,
+      images: imagesJson is List
+          ? imagesJson
+                .whereType<Map<String, dynamic>>()
+                .map(CamionImage.fromJson)
+                .toList()
+          : const [],
     );
   }
 }

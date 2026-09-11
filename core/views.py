@@ -1462,7 +1462,12 @@ class PropositionListCreateView(
 
         # `select_related` : le serializer déréférence `demande.pays_depart`
         # (pour `pays_depart`/`pays_arrivee`/`devise`) sur chaque ligne.
-        queryset = Proposition.objects.select_related('demande')
+        # `prefetch_related` : PropositionCamionSerializer résout maintenant
+        # la photo du camion (via `camion.images`) et celle du chauffeur pour
+        # chaque ligne de `camions` — sans ça, N+1 requêtes par proposition.
+        queryset = Proposition.objects.select_related('demande').prefetch_related(
+            'camions__camion__images', 'camions__chauffeur'
+        )
 
         # Transporteur : ses propositions
         if user.type_compte == "TRANSPORTEUR":
@@ -1620,7 +1625,7 @@ class MissionListView(generics.ListAPIView):
             "demande",
             "transporteur",
         ).prefetch_related(
-            "camions"
+            "camions__camion__images", "camions__chauffeur"
         )
 
 

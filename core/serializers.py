@@ -12,6 +12,26 @@ from .constants import (
 from .telephone import TelephoneInvalide, candidats_suffixe_telephone, valider_et_normaliser
 
 
+def _url_absolue(fichier, request):
+    """URL absolue d'un FileField/ImageField, ou `None` si le champ est vide.
+    Un serializer imbriqué reçoit son contexte (donc `request`) du serializer
+    racine via DRF — mais si jamais celui-ci manque (instanciation hors
+    d'une vue), on retombe sur l'URL relative plutôt que de planter."""
+    if not fichier:
+        return None
+    url = fichier.url
+    return request.build_absolute_uri(url) if request else url
+
+
+def _image_principale_camion(camion, request):
+    """Même résolution `principale` sinon première image que côté Flutter
+    (`Camion.imagePrincipaleUrl`), pour les serializers qui n'exposent pas
+    la liste complète `images` mais juste une vignette (résumé camion dans
+    proposition/mission/chauffeur)."""
+    image = camion.images.filter(principale=True).first() or camion.images.first()
+    return _url_absolue(image.image, request) if image else None
+
+
 def valider_format_camion(type_camion, format_camion, format_autre):
     """Règles partagées entre `CamionSerializer` et `DemandeTransportSerializer`
     pour le couple `format_camion`/`format_autre` : lève une
@@ -308,9 +328,14 @@ class ChauffeurResumeSerializer(serializers.ModelSerializer):
     camion (qui le conduit) — pendant de CamionResumeSerializer, dans
     l'autre sens."""
 
+    photo = serializers.SerializerMethodField()
+
+    def get_photo(self, obj):
+        return _url_absolue(obj.photo, self.context.get('request'))
+
     class Meta:
         model = Chauffeur
-        fields = ['id', 'nom', 'telephone', 'pays']
+        fields = ['id', 'nom', 'telephone', 'pays', 'photo']
 
 
 class CamionFlotteSerializer(CamionRechercheSerializer):
@@ -458,6 +483,11 @@ class CamionResumeSerializer(serializers.ModelSerializer):
     """Version allégée du camion, pour l'afficher à l'intérieur d'un chauffeur
     ou d'une affectation sans embarquer tout le détail du véhicule."""
 
+    image_principale = serializers.SerializerMethodField()
+
+    def get_image_principale(self, obj):
+        return _image_principale_camion(obj, self.context.get('request'))
+
     class Meta:
         model = Camion
         fields = [
@@ -466,6 +496,7 @@ class CamionResumeSerializer(serializers.ModelSerializer):
             'type_camion',
             'marque',
             'modele',
+            'image_principale',
         ]
 
 
@@ -616,18 +647,35 @@ class PropositionCamionSerializer(serializers.ModelSerializer):
     # est None (contrairement à AffectationChauffeur, où chauffeur est requis).
     chauffeur_nom = serializers.SerializerMethodField()
 
+    # Photos du camion/chauffeur proposé, absentes jusqu'ici : l'entreprise
+    # ne recevait que des id bruts et ne pouvait jamais voir à quoi
+    # ressemblait le camion/chauffeur qu'on lui proposait. `camion_images`
+    # renvoie la galerie complète (pas juste la principale) pour permettre
+    # au client de l'ouvrir en grand côté app, comme `CamionSerializer.images`.
+    camion_images = ImageCamionSerializer(
+        source='camion.images',
+        many=True,
+        read_only=True
+    )
+    chauffeur_photo = serializers.SerializerMethodField()
+
     class Meta:
         model = PropositionCamion
         fields = [
             'camion',
             'camion_immatriculation',
+            'camion_images',
             'chauffeur',
             'chauffeur_nom',
+            'chauffeur_photo',
             'ordre'
         ]
 
     def get_chauffeur_nom(self, obj):
         return obj.chauffeur.nom if obj.chauffeur else None
+
+    def get_chauffeur_photo(self, obj):
+        return _url_absolue(obj.chauffeur.photo, self.context.get('request')) if obj.chauffeur else None
 
     def validate(self, attrs):
         """Le camion (et le chauffeur, s'il est précisé) doivent appartenir
@@ -798,16 +846,37 @@ class MissionCamionSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    # Mêmes ajouts que PropositionCamionSerializer : le client/l'entreprise
+    # ne voyait ni le nom ni la photo du chauffeur, ni les photos du camion,
+    # sur la mission qui lui est pourtant assignée. `camion_images` : galerie
+    # complète, pas juste la principale (cf. commentaire équivalent plus haut).
+    chauffeur_nom = serializers.SerializerMethodField()
+    camion_images = ImageCamionSerializer(
+        source='camion.images',
+        many=True,
+        read_only=True
+    )
+    chauffeur_photo = serializers.SerializerMethodField()
+
     class Meta:
         model = MissionCamion
         fields = [
             'id',
             'camion',
             'chauffeur',
+            'chauffeur_nom',
             'statut',
             'statut_libelle',
             'camion_immatriculation',
+            'camion_images',
+            'chauffeur_photo',
         ]
+
+    def get_chauffeur_nom(self, obj):
+        return obj.chauffeur.nom if obj.chauffeur else None
+
+    def get_chauffeur_photo(self, obj):
+        return _url_absolue(obj.chauffeur.photo, self.context.get('request')) if obj.chauffeur else None
 
 
 

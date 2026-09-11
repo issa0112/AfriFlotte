@@ -9,6 +9,7 @@ import '../../services/mission_service.dart';
 import '../../services/paiement_service.dart';
 import '../paiement/choisir_mode_paiement_screen.dart';
 import '../paiement/historique_paiements_screen.dart';
+import '../../widgets/camion_chauffeur_apercu.dart';
 
 /// Missions du client : les demandes qui ont trouvé un transporteur.
 /// Utilisable en onglet (embedded) ou poussée en plein écran.
@@ -35,12 +36,36 @@ class MissionsClientScreen extends StatefulWidget {
 class _MissionsClientScreenState extends State<MissionsClientScreen> {
   late Future<List<Mission>> _futureMissions;
   late String _filtre;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _filtre = widget.initialFilter ?? 'TOUTES';
     _futureMissions = MissionService.getMissions(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Rechercher...',
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
   }
 
   Future<void> _refresh() async {
@@ -56,10 +81,18 @@ class _MissionsClientScreenState extends State<MissionsClientScreen> {
   }
 
   List<Mission> _appliquerFiltre(List<Mission> missions) {
-    if (_filtre == 'TOUTES') return missions;
-    return missions
-        .where((mission) => mission.statut.toUpperCase() == _filtre)
-        .toList();
+    final query = _searchController.text.trim().toLowerCase();
+
+    return missions.where((mission) {
+      final statutOk =
+          _filtre == 'TOUTES' || mission.statut.toUpperCase() == _filtre;
+      final texteOk =
+          query.isEmpty ||
+          mission.trajet.toLowerCase().contains(query) ||
+          mission.transporteurNom.toLowerCase().contains(query) ||
+          mission.produit.toLowerCase().contains(query);
+      return statutOk && texteOk;
+    }).toList();
   }
 
   @override
@@ -109,6 +142,10 @@ class _MissionsClientScreenState extends State<MissionsClientScreen> {
             onRefresh: _refresh,
             child: Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: _buildSearchField(),
+                ),
                 _FiltreBar(
                   filtres: filtres,
                   selection: _filtre,
@@ -291,6 +328,20 @@ class _MissionCard extends StatelessWidget {
               mission.typeCamion,
             ),
           ),
+          if (mission.camions.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            ...mission.camions.map(
+              (c) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: CamionChauffeurApercu(
+                  camionImmatriculation: c.camionImmatriculation,
+                  camionImages: c.camionImages,
+                  chauffeurNom: c.chauffeurNom,
+                  chauffeurPhoto: c.chauffeurPhoto,
+                ),
+              ),
+            ),
+          ],
           _Ligne(
             icon: Icons.event_outlined,
             label: l10n.missionsClientChargementLabel,

@@ -1,10 +1,15 @@
+import 'camion.dart' show CamionImage;
+
 /// Un camion (et éventuellement un chauffeur) affecté à une mission, tel que
 /// renvoyé par `MissionCamionSerializer` dans le champ `camions` de `Mission`.
 class MissionCamionInfo {
   final int id;
   final int camionId;
   final String camionImmatriculation;
+  final List<CamionImage> camionImages;
   final int? chauffeurId;
+  final String? chauffeurNom;
+  final String? chauffeurPhoto;
   final String statut;
   final String statutLibelle;
 
@@ -12,23 +17,44 @@ class MissionCamionInfo {
     required this.id,
     required this.camionId,
     required this.camionImmatriculation,
+    this.camionImages = const [],
     this.chauffeurId,
+    this.chauffeurNom,
+    this.chauffeurPhoto,
     required this.statut,
     required this.statutLibelle,
   });
 
+  /// Photo à afficher en miniature : celle marquée `principale`, sinon la
+  /// première — même résolution que `Camion.imagePrincipaleUrl`.
+  CamionImage? get imagePrincipale {
+    if (camionImages.isEmpty) return null;
+    final principale = camionImages.where((image) => image.principale);
+    return principale.isNotEmpty ? principale.first : camionImages.first;
+  }
+
   factory MissionCamionInfo.fromJson(Map<String, dynamic> json) {
+    final imagesJson = json['camion_images'];
+
     return MissionCamionInfo(
       id: json['id'] is int ? json['id'] as int : int.parse('${json['id']}'),
       camionId: json['camion'] is int
           ? json['camion'] as int
           : int.parse('${json['camion']}'),
       camionImmatriculation: json['camion_immatriculation']?.toString() ?? '',
+      camionImages: imagesJson is List
+          ? imagesJson
+                .whereType<Map<String, dynamic>>()
+                .map(CamionImage.fromJson)
+                .toList()
+          : const [],
       chauffeurId: json['chauffeur'] == null
           ? null
           : (json['chauffeur'] is int
                 ? json['chauffeur'] as int
                 : int.tryParse('${json['chauffeur']}')),
+      chauffeurNom: json['chauffeur_nom']?.toString(),
+      chauffeurPhoto: json['chauffeur_photo']?.toString(),
       statut: json['statut']?.toString() ?? 'PREVU',
       statutLibelle: json['statut_libelle']?.toString() ?? 'Prévu',
     );
