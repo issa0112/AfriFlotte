@@ -34,12 +34,36 @@ class HistoriqueClientScreen extends StatefulWidget {
 class _HistoriqueClientScreenState extends State<HistoriqueClientScreen> {
   late Future<List<DemandeTransport>> _futureDemandes;
   late String _filtre;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _filtre = widget.initialFilter ?? 'TOUTES';
     _futureDemandes = DemandeTransportService.getDemandes(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Rechercher...',
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
   }
 
   Future<void> _refresh() async {
@@ -135,10 +159,16 @@ class _HistoriqueClientScreenState extends State<HistoriqueClientScreen> {
   }
 
   List<DemandeTransport> _appliquerFiltre(List<DemandeTransport> demandes) {
-    if (_filtre == 'TOUTES') return demandes;
-    return demandes
-        .where((demande) => demande.statut.toUpperCase() == _filtre)
-        .toList();
+    final query = _searchController.text.trim().toLowerCase();
+
+    return demandes.where((demande) {
+      final statutOk = _filtre == 'TOUTES' || demande.statut.toUpperCase() == _filtre;
+      final texteOk =
+          query.isEmpty ||
+          demande.trajet.toLowerCase().contains(query) ||
+          demande.produit.toLowerCase().contains(query);
+      return statutOk && texteOk;
+    }).toList();
   }
 
   @override
@@ -188,6 +218,10 @@ class _HistoriqueClientScreenState extends State<HistoriqueClientScreen> {
             onRefresh: _refresh,
             child: Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: _buildSearchField(),
+                ),
                 _FiltreBar(
                   filtres: filtres,
                   selection: _filtre,
@@ -309,7 +343,7 @@ class _DemandCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(

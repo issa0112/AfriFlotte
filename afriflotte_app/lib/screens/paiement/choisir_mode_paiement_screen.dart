@@ -119,7 +119,7 @@ class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
@@ -237,7 +237,7 @@ class _LigneMontant extends StatelessWidget {
     final style = TextStyle(
       fontWeight: gras ? FontWeight.w800 : FontWeight.w600,
       fontSize: gras ? 17 : 14,
-      color: couleur ?? Colors.black87,
+      color: couleur ?? Theme.of(context).colorScheme.onSurface,
     );
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -273,7 +273,7 @@ class _CarteMode extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),

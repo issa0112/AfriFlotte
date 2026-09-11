@@ -42,11 +42,35 @@ class GpsTransportScreen extends StatefulWidget {
 
 class _GpsTransportScreenState extends State<GpsTransportScreen> {
   late Future<List<CamionRecherche>> _futureFlotte;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _futureFlotte = RechercheCamionService.mesPositionsFlotte(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Rechercher...',
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
   }
 
   Future<void> _rafraichir() async {
@@ -124,15 +148,43 @@ class _GpsTransportScreenState extends State<GpsTransportScreen> {
           );
         }
 
-        return RefreshIndicator(
-          onRefresh: _rafraichir,
-          child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(18, 6, 18, 100),
-            itemCount: flotte.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, index) =>
-                _CamionFlotteCard(camion: flotte[index], token: widget.token),
-          ),
+        final query = _searchController.text.trim().toLowerCase();
+        final visibles = query.isEmpty
+            ? flotte
+            : flotte.where((c) {
+                final chauffeurNom = c.chauffeurActuel?.nom.toLowerCase() ?? '';
+                return c.immatriculation.toLowerCase().contains(query) ||
+                    c.ville.toLowerCase().contains(query) ||
+                    chauffeurNom.contains(query);
+              }).toList();
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+              child: _buildSearchField(),
+            ),
+            Expanded(
+              child: visibles.isEmpty
+                  ? _EtatMessage(
+                      icon: Icons.search_off_rounded,
+                      message: 'Aucun résultat.',
+                      onRetry: _rafraichir,
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _rafraichir,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(18, 6, 18, 100),
+                        itemCount: visibles.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) => _CamionFlotteCard(
+                          camion: visibles[index],
+                          token: widget.token,
+                        ),
+                      ),
+                    ),
+            ),
+          ],
         );
       },
     );

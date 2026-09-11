@@ -27,12 +27,39 @@ class _AffecterCamionScreenState extends State<AffecterCamionScreen> {
   late Future<List<Camion>> _futureCamions;
   int? _camionSelectionneId;
   bool _envoi = false;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _camionSelectionneId = widget.chauffeur.camionActuel?.id;
     _futureCamions = CamionService.getCamions(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Rechercher...',
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _confirmer() async {
@@ -80,55 +107,74 @@ class _AffecterCamionScreenState extends State<AffecterCamionScreen> {
 
           if (snapshot.hasError) {
             return Center(
-              child: Text(
-                '${snapshot.error}'.replaceFirst('Exception: ', ''),
-              ),
+              child: Text('${snapshot.error}'.replaceFirst('Exception: ', '')),
             );
           }
 
           final camions = snapshot.data ?? const <Camion>[];
 
           if (camions.isEmpty) {
-            return Center(
-              child: Text(l10n.assignCamionEmpty),
-            );
+            return Center(child: Text(l10n.assignCamionEmpty));
           }
 
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            itemCount: camions.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              final camion = camions[index];
-              final selectionne = _camionSelectionneId == camion.id;
+          final query = _searchController.text.trim().toLowerCase();
+          final visibles = query.isEmpty
+              ? camions
+              : camions
+                    .where(
+                      (c) =>
+                          c.immatriculation.toLowerCase().contains(query) ||
+                          c.marque.toLowerCase().contains(query) ||
+                          c.modele.toLowerCase().contains(query),
+                    )
+                    .toList();
 
-              return Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: selectionne
-                        ? const Color(0xFF102C5C)
-                        : Colors.grey.shade300,
-                    width: selectionne ? 2 : 1,
-                  ),
-                ),
-                child: RadioListTile<int>(
-                  value: camion.id,
-                  groupValue: _camionSelectionneId,
-                  onChanged: (value) =>
-                      setState(() => _camionSelectionneId = value),
-                  title: Text(camion.immatriculation),
-                  subtitle: Text(
-                    '${camion.marque} ${camion.modele} · ${camion.typeCamion}',
-                  ),
-                  secondary: Icon(
-                    Icons.local_shipping,
-                    color: camion.disponible ? Colors.green : Colors.orange,
-                  ),
-                ),
-              );
-            },
+          return Column(
+            children: [
+              _buildSearchField(),
+              Expanded(
+                child: visibles.isEmpty
+                    ? const Center(child: Text('Aucun résultat.'))
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                        itemCount: visibles.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          final camion = visibles[index];
+                          final selectionne = _camionSelectionneId == camion.id;
+
+                          return Card(
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: selectionne
+                                    ? const Color(0xFF102C5C)
+                                    : Colors.grey.shade300,
+                                width: selectionne ? 2 : 1,
+                              ),
+                            ),
+                            child: RadioListTile<int>(
+                              value: camion.id,
+                              groupValue: _camionSelectionneId,
+                              onChanged: (value) =>
+                                  setState(() => _camionSelectionneId = value),
+                              title: Text(camion.immatriculation),
+                              subtitle: Text(
+                                '${camion.marque} ${camion.modele} · ${camion.typeCamion}',
+                              ),
+                              secondary: Icon(
+                                Icons.local_shipping,
+                                color: camion.disponible
+                                    ? Colors.green
+                                    : Colors.orange,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           );
         },
       ),

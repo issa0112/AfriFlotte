@@ -21,17 +21,41 @@ class HistoriquePaiementsScreen extends StatefulWidget {
 
 class _HistoriquePaiementsScreenState extends State<HistoriquePaiementsScreen> {
   late Future<List<Paiement>> _future;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _future = PaiementService.mesPaiements(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _rafraichir() async {
     final future = PaiementService.mesPaiements(widget.token);
     setState(() => _future = future);
     await future.catchError((_) => <Paiement>[]);
+  }
+
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Rechercher...',
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
   }
 
   @override
@@ -45,60 +69,80 @@ class _HistoriquePaiementsScreenState extends State<HistoriquePaiementsScreen> {
         backgroundColor: _bleuNuit,
         foregroundColor: Colors.white,
       ),
-      body: FutureBuilder<List<Paiement>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: _buildSearchField(),
+          ),
+          Expanded(
+            child: FutureBuilder<List<Paiement>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          final paiements = snapshot.data ?? const <Paiement>[];
+                final paiements = snapshot.data ?? const <Paiement>[];
+                final query = _searchController.text.trim().toLowerCase();
+                final visibles = query.isEmpty
+                    ? paiements
+                    : paiements
+                          .where(
+                            (p) => p.missionTrajet.toLowerCase().contains(query),
+                          )
+                          .toList();
 
-          if (paiements.isEmpty) {
-            return RefreshIndicator(
-              onRefresh: _rafraichir,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(32, 80, 32, 32),
-                children: [
-                  Icon(
-                    Icons.receipt_long_outlined,
-                    size: 52,
-                    color: Colors.grey.shade400,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    l10n.paiementHistoriqueEmpty,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: _rafraichir,
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: paiements.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) => _PaiementCard(
-                paiement: paiements[index],
-                onTap: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PaiementDetailScreen(
-                        token: widget.token,
-                        paiement: paiements[index],
-                      ),
+                if (visibles.isEmpty) {
+                  return RefreshIndicator(
+                    onRefresh: _rafraichir,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(32, 80, 32, 32),
+                      children: [
+                        Icon(
+                          Icons.receipt_long_outlined,
+                          size: 52,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          paiements.isEmpty
+                              ? l10n.paiementHistoriqueEmpty
+                              : 'Aucun résultat trouvé',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      ],
                     ),
                   );
-                  _rafraichir();
-                },
-              ),
+                }
+
+                return RefreshIndicator(
+                  onRefresh: _rafraichir,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: visibles.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) => _PaiementCard(
+                      paiement: visibles[index],
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PaiementDetailScreen(
+                              token: widget.token,
+                              paiement: visibles[index],
+                            ),
+                          ),
+                        );
+                        _rafraichir();
+                      },
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }

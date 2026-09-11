@@ -25,10 +25,53 @@ class _ListeChauffeursState extends State<ListeChauffeurs> {
   int? _actionEnCoursPourId;
   int? _photoEnCoursPourId;
 
+  // Matérialise la liste chargée par le FutureBuilder pour pouvoir la
+  // filtrer localement (recherche texte) sans relancer d'appel réseau.
+  List<Chauffeur> _chauffeurs = [];
+  final TextEditingController _searchController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _futureChauffeurs = ChauffeurService.getChauffeurs(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Chauffeur> get _chauffeursFiltres {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return _chauffeurs;
+    return _chauffeurs
+        .where(
+          (c) =>
+              c.nom.toLowerCase().contains(query) ||
+              c.telephone.toLowerCase().contains(query),
+        )
+        .toList();
+  }
+
+  Widget _buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Rechercher...',
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _rafraichir() async {
@@ -162,9 +205,9 @@ class _ListeChauffeursState extends State<ListeChauffeurs> {
             );
           }
 
-          final chauffeurs = snapshot.data ?? const <Chauffeur>[];
+          _chauffeurs = snapshot.data ?? const <Chauffeur>[];
 
-          if (chauffeurs.isEmpty) {
+          if (_chauffeurs.isEmpty) {
             return RefreshIndicator(
               onRefresh: _rafraichir,
               child: ListView(
@@ -176,132 +219,181 @@ class _ListeChauffeursState extends State<ListeChauffeurs> {
             );
           }
 
-          return RefreshIndicator(
-            onRefresh: _rafraichir,
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-              itemCount: chauffeurs.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final chauffeur = chauffeurs[index];
-                final actionEnCours = _actionEnCoursPourId == chauffeur.id;
+          final chauffeurs = _chauffeursFiltres;
 
-                return Card(
-                  elevation: 0,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+          return Column(
+            children: [
+              _buildSearchField(),
+              Expanded(
+                child: chauffeurs.isEmpty
+                    ? RefreshIndicator(
+                        onRefresh: _rafraichir,
+                        child: ListView(
                           children: [
-                            AvatarPicker(
-                              photoUrl: chauffeur.photo,
-                              initiales: chauffeur.nom.isNotEmpty
-                                  ? chauffeur.nom[0].toUpperCase()
-                                  : '?',
-                              radius: 20,
-                              loading: _photoEnCoursPourId == chauffeur.id,
-                              onImageSelectionnee: (fichier) =>
-                                  _changerPhoto(chauffeur, fichier),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    chauffeur.nom,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    '${formaterLocal(chauffeur.telephone, chauffeur.pays)} · ${nomParPays(chauffeur.pays) ?? chauffeur.pays}',
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: chauffeur.actif
-                                    ? Colors.green.shade50
-                                    : Colors.grey.shade200,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                chauffeur.actif
-                                    ? l10n.chauffeursActive
-                                    : l10n.chauffeursInactive,
-                                style: TextStyle(
-                                      color: chauffeur.actif
-                                          ? Theme.of(context).colorScheme.secondary
-                                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
+                            const SizedBox(height: 120),
+                            const Center(child: Text('Aucun résultat.')),
                           ],
                         ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.local_shipping_outlined,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.secondary,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                chauffeur.aUnCamion
-                                    ? chauffeur.camionActuel!.immatriculation
-                                    : l10n.chauffeursNoCamion,
-                                style: TextStyle(
-                                  color: chauffeur.aUnCamion
-                                      ? Theme.of(context).colorScheme.onSurface
-                                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                      )
+                    : RefreshIndicator(
+                        onRefresh: _rafraichir,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                          itemCount: chauffeurs.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final chauffeur = chauffeurs[index];
+                            final actionEnCours =
+                                _actionEnCoursPourId == chauffeur.id;
+
+                            return Card(
+                              elevation: 0,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        AvatarPicker(
+                                          photoUrl: chauffeur.photo,
+                                          initiales: chauffeur.nom.isNotEmpty
+                                              ? chauffeur.nom[0].toUpperCase()
+                                              : '?',
+                                          radius: 20,
+                                          loading:
+                                              _photoEnCoursPourId ==
+                                              chauffeur.id,
+                                          onImageSelectionnee: (fichier) =>
+                                              _changerPhoto(chauffeur, fichier),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                chauffeur.nom,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              Text(
+                                                '${formaterLocal(chauffeur.telephone, chauffeur.pays)} · ${nomParPays(chauffeur.pays) ?? chauffeur.pays}',
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: chauffeur.actif
+                                                ? Colors.green.shade50
+                                                : Theme.of(context)
+                                                      .colorScheme
+                                                      .surfaceContainerHighest,
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            chauffeur.actif
+                                                ? l10n.chauffeursActive
+                                                : l10n.chauffeursInactive,
+                                            style: TextStyle(
+                                              color: chauffeur.actif
+                                                  ? Theme.of(
+                                                      context,
+                                                    ).colorScheme.secondary
+                                                  : Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.local_shipping_outlined,
+                                          size: 18,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.secondary,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            chauffeur.aUnCamion
+                                                ? chauffeur
+                                                      .camionActuel!
+                                                      .immatriculation
+                                                : l10n.chauffeursNoCamion,
+                                            style: TextStyle(
+                                              color: chauffeur.aUnCamion
+                                                  ? Theme.of(
+                                                      context,
+                                                    ).colorScheme.onSurface
+                                                  : Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: actionEnCours
+                                          ? const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                vertical: 8,
+                                              ),
+                                              child: SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              ),
+                                            )
+                                          : chauffeur.aUnCamion
+                                          ? TextButton.icon(
+                                              onPressed: () =>
+                                                  _liberer(chauffeur),
+                                              icon: const Icon(Icons.link_off),
+                                              label: Text(
+                                                l10n.chauffeursRelease,
+                                              ),
+                                            )
+                                          : TextButton.icon(
+                                              onPressed: () =>
+                                                  _assigner(chauffeur),
+                                              icon: const Icon(Icons.link),
+                                              label: Text(
+                                                l10n.chauffeursAssignCamion,
+                                              ),
+                                            ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ),
-                          ],
+                            );
+                          },
                         ),
-                        const SizedBox(height: 10),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: actionEnCours
-                              ? const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 8),
-                                  child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                )
-                              : chauffeur.aUnCamion
-                              ? TextButton.icon(
-                                  onPressed: () => _liberer(chauffeur),
-                                  icon: const Icon(Icons.link_off),
-                                  label: Text(l10n.chauffeursRelease),
-                                )
-                              : TextButton.icon(
-                                  onPressed: () => _assigner(chauffeur),
-                                  icon: const Icon(Icons.link),
-                                  label: Text(l10n.chauffeursAssignCamion),
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
+                      ),
+              ),
+            ],
           );
         },
       ),

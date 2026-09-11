@@ -20,11 +20,38 @@ class MesMissionsScreen extends StatefulWidget {
 class _MesMissionsScreenState extends State<MesMissionsScreen> {
   late Future<List<Mission>> _futureMissions;
   int? _actionEnCoursPourId;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _futureMissions = MissionService.getMissions(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Rechercher...',
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _rafraichir() async {
@@ -108,32 +135,54 @@ class _MesMissionsScreenState extends State<MesMissionsScreen> {
             );
           }
 
-          return RefreshIndicator(
-            onRefresh: _rafraichir,
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-              itemCount: missions.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) => _MissionCard(
-                mission: missions[index],
-                actionEnCours: _actionEnCoursPourId == missions[index].id,
-                onDemarrer: () => _executer(
-                  missions[index],
-                  MissionService.accepterMission,
-                  l10n.missionsStarted,
-                ),
-                onTerminer: () => _executer(
-                  missions[index],
-                  MissionService.terminerMission,
-                  l10n.missionsFinished,
-                ),
-                onAnnuler: () => _executer(
-                  missions[index],
-                  MissionService.refuserMission,
-                  l10n.missionsCancelled,
-                ),
+          final query = _searchController.text.trim().toLowerCase();
+          final visibles = query.isEmpty
+              ? missions
+              : missions
+                    .where(
+                      (m) =>
+                          m.trajet.toLowerCase().contains(query) ||
+                          m.produit.toLowerCase().contains(query),
+                    )
+                    .toList();
+
+          return Column(
+            children: [
+              _buildSearchField(),
+              Expanded(
+                child: visibles.isEmpty
+                    ? const Center(child: Text('Aucun résultat.'))
+                    : RefreshIndicator(
+                        onRefresh: _rafraichir,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                          itemCount: visibles.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) => _MissionCard(
+                            mission: visibles[index],
+                            actionEnCours:
+                                _actionEnCoursPourId == visibles[index].id,
+                            onDemarrer: () => _executer(
+                              visibles[index],
+                              MissionService.accepterMission,
+                              l10n.missionsStarted,
+                            ),
+                            onTerminer: () => _executer(
+                              visibles[index],
+                              MissionService.terminerMission,
+                              l10n.missionsFinished,
+                            ),
+                            onAnnuler: () => _executer(
+                              visibles[index],
+                              MissionService.refuserMission,
+                              l10n.missionsCancelled,
+                            ),
+                          ),
+                        ),
+                      ),
               ),
-            ),
+            ],
           );
         },
       ),
@@ -203,12 +252,18 @@ class _MissionCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '${nomParPays(mission.paysDepart) ?? mission.paysDepart} → ${nomParPays(mission.paysArrivee) ?? mission.paysArrivee}',
-              style: const TextStyle(fontSize: 12, color: Colors.black45),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               '${mission.produit} · ${mission.typeCamion} · ${mission.nombreCamions} camion(s)',
-              style: const TextStyle(fontSize: 13, color: Colors.black54),
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             if (mission.prixFinal != null) ...[
               const SizedBox(height: 4),

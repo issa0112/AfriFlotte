@@ -63,11 +63,19 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   late Future<List<AppNotification>> _futureNotifications;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _futureNotifications = NotificationService.getNotifications(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _rafraichir() async {
@@ -182,6 +190,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  Widget _buildSearchField() {
+    return TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Rechercher...',
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: Theme.of(context).colorScheme.surface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -200,94 +224,129 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<List<AppNotification>>(
-        future: _futureNotifications,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: _buildSearchField(),
+          ),
+          Expanded(
+            child: FutureBuilder<List<AppNotification>>(
+              future: _futureNotifications,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('${snapshot.error}'.replaceFirst('Exception: ', '')),
-            );
-          }
-
-          final notifications = snapshot.data ?? const <AppNotification>[];
-
-          if (notifications.isEmpty) {
-            return RefreshIndicator(
-              onRefresh: _rafraichir,
-              child: ListView(
-                children: [
-                  const SizedBox(height: 120),
-                  Center(child: Text(l10n.notifEmpty)),
-                ],
-              ),
-            );
-          }
-
-          return RefreshIndicator(
-            onRefresh: _rafraichir,
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              itemCount: notifications.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final notification = notifications[index];
-
-                return Card(
-                  elevation: 0,
-                  color: notification.lue
-                      ? Colors.white
-                      : const Color(0xFFEFF6FF),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  child: ListTile(
-                    onTap: () => _ouvrir(notification),
-                    leading: Icon(
-                      _typeIcones[notification.type] ??
-                          Icons.notifications_outlined,
-                      color: const Color(0xFF102C5C),
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      '${snapshot.error}'.replaceFirst('Exception: ', ''),
                     ),
-                    title: Text(
-                      notification.message,
-                      style: TextStyle(
-                        fontWeight: notification.lue
-                            ? FontWeight.normal
-                            : FontWeight.w700,
-                      ),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
+                  );
+                }
+
+                final notifications =
+                    snapshot.data ?? const <AppNotification>[];
+                final query = _searchController.text.trim().toLowerCase();
+                final visibles = query.isEmpty
+                    ? notifications
+                    : notifications
+                          .where(
+                            (n) =>
+                                n.message.toLowerCase().contains(query) ||
+                                n.typeLibelle.toLowerCase().contains(query),
+                          )
+                          .toList();
+
+                if (visibles.isEmpty) {
+                  return RefreshIndicator(
+                    onRefresh: _rafraichir,
+                    child: ListView(
                       children: [
-                        Text(
-                          '${notification.typeLibelle} · ${_tempsRelatif(l10n, notification.createdAt)}',
+                        const SizedBox(height: 120),
+                        Center(
+                          child: Text(
+                            notifications.isEmpty
+                                ? l10n.notifEmpty
+                                : 'Aucun résultat trouvé',
+                          ),
                         ),
-                        if (_typesProposition.contains(notification.type))
-                          _StatutProposition(notification: notification),
                       ],
                     ),
-                    isThreeLine: _typesProposition.contains(notification.type),
-                    trailing: notification.lue
-                        ? null
-                        : Container(
-                            width: 10,
-                            height: 10,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF102C5C),
-                              shape: BoxShape.circle,
+                  );
+                }
+
+                return RefreshIndicator(
+                  onRefresh: _rafraichir,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                    itemCount: visibles.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final notification = visibles[index];
+
+                      return Card(
+                        elevation: 0,
+                        color: notification.lue
+                            ? Theme.of(context).colorScheme.surface
+                            : Theme.of(
+                                context,
+                              ).colorScheme.secondary.withValues(alpha: 0.12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        child: ListTile(
+                          onTap: () => _ouvrir(notification),
+                          leading: Icon(
+                            _typeIcones[notification.type] ??
+                                Icons.notifications_outlined,
+                            color: const Color(0xFF102C5C),
+                          ),
+                          title: Text(
+                            notification.message,
+                            style: TextStyle(
+                              fontWeight: notification.lue
+                                  ? FontWeight.normal
+                                  : FontWeight.w700,
                             ),
                           ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${notification.typeLibelle} · ${_tempsRelatif(l10n, notification.createdAt)}',
+                              ),
+                              if (_typesProposition.contains(
+                                notification.type,
+                              ))
+                                _StatutProposition(notification: notification),
+                            ],
+                          ),
+                          isThreeLine: _typesProposition.contains(
+                            notification.type,
+                          ),
+                          trailing: notification.lue
+                              ? null
+                              : Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF102C5C),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                        ),
+                      );
+                    },
                   ),
                 );
               },
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }

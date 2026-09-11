@@ -155,7 +155,7 @@ class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Form(
@@ -166,13 +166,20 @@ class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
           children: [
             Text(
               widget.trajet,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.black54),
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(l10n.paiementCarteMontantAPayer, style: const TextStyle(color: Colors.black54)),
+                Text(
+                  l10n.paiementCarteMontantAPayer,
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
                 Text(
                   '${widget.montant.toStringAsFixed(0)} ${widget.devise}',
                   style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
@@ -250,12 +257,19 @@ class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
             const SizedBox(height: 14),
             Row(
               children: [
-                const Icon(Icons.lock_outline_rounded, size: 14, color: Colors.black45),
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     l10n.paiementCarteSecuriteNote,
-                    style: const TextStyle(fontSize: 11.5, color: Colors.black45),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],

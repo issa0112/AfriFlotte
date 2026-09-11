@@ -100,7 +100,7 @@ TEXTES = {
         "camion_citerne": "Camion-citerne",
         "camion_benne": "Benne",
         "camion_plateau": "Plateau",
-        "camion_conteneur": "Porte-conteneur",
+        "camion_conteneur": "Porte-char",
         "camion_6roues": "Camion 6 roues",
         "camion_10roues": "Camion 10 roues",
         "camion_12roues": "Camion 12 roues",

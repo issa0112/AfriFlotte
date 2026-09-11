@@ -35,12 +35,39 @@ class _MesPropositionsScreenState extends State<MesPropositionsScreen> {
   late Future<List<Proposition>> _futurePropositions;
   late String _filtre;
   bool _absenceSignalee = false;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _filtre = widget.highlightId != null ? 'TOUTES' : 'EN_ATTENTE';
     _futurePropositions = PropositionService.getPropositions(widget.token);
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Rechercher...',
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
   }
 
   void _verifierPresenceHighlight(List<Proposition> propositions) {
@@ -66,8 +93,22 @@ class _MesPropositionsScreenState extends State<MesPropositionsScreen> {
   }
 
   List<Proposition> _appliquerFiltre(List<Proposition> propositions) {
-    if (_filtre == 'TOUTES') return propositions;
-    return propositions.where((p) => p.statut == _filtre).toList();
+    var resultat = _filtre == 'TOUTES'
+        ? propositions
+        : propositions.where((p) => p.statut == _filtre).toList();
+
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      resultat = resultat
+          .where(
+            (p) =>
+                p.trajet.toLowerCase().contains(query) ||
+                (p.message?.toLowerCase().contains(query) ?? false),
+          )
+          .toList();
+    }
+
+    return resultat;
   }
 
   @override
@@ -117,6 +158,7 @@ class _MesPropositionsScreenState extends State<MesPropositionsScreen> {
             onRefresh: _rafraichir,
             child: Column(
               children: [
+                _buildSearchField(),
                 _FiltreBar(
                   filtres: filtres,
                   selection: _filtre,
@@ -134,10 +176,12 @@ class _MesPropositionsScreenState extends State<MesPropositionsScreen> {
                       : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
                           itemCount: visibles.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 12),
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 12),
                           itemBuilder: (context, index) => _PropositionCard(
                             proposition: visibles[index],
-                            enEvidence: widget.highlightId == visibles[index].id,
+                            enEvidence:
+                                widget.highlightId == visibles[index].id,
                           ),
                         ),
                 ),
@@ -220,8 +264,9 @@ class _PropositionCard extends StatelessWidget {
             : Border.all(color: Theme.of(context).colorScheme.outline),
         boxShadow: [
           BoxShadow(
-            color: (enEvidence ? _bleuAccent : Colors.black)
-                .withValues(alpha: enEvidence ? 0.16 : 0.06),
+            color: (enEvidence ? _bleuAccent : Colors.black).withValues(
+              alpha: enEvidence ? 0.16 : 0.06,
+            ),
             blurRadius: 10,
             offset: const Offset(0, 6),
           ),
@@ -235,11 +280,17 @@ class _PropositionCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   proposition.trajet,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: couleur.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(999),
@@ -273,7 +324,8 @@ class _PropositionCard extends StatelessWidget {
               ),
             ],
           ),
-          if (proposition.message != null && proposition.message!.trim().isNotEmpty) ...[
+          if (proposition.message != null &&
+              proposition.message!.trim().isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
               proposition.message!,
@@ -331,7 +383,10 @@ class _EmptyState extends StatelessWidget {
   final bool filtreActif;
   final bool aDesPropositions;
 
-  const _EmptyState({required this.filtreActif, required this.aDesPropositions});
+  const _EmptyState({
+    required this.filtreActif,
+    required this.aDesPropositions,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -348,11 +403,7 @@ class _EmptyState extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(32, 60, 32, 32),
       children: [
-        Icon(
-          Icons.local_offer_outlined,
-          size: 56,
-          color: Colors.grey.shade400,
-        ),
+        Icon(Icons.local_offer_outlined, size: 56, color: Colors.grey.shade400),
         const SizedBox(height: 16),
         Text(
           titre,
@@ -384,7 +435,11 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.cloud_off_rounded, size: 52, color: Color(0xFFEF4444)),
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 52,
+              color: Color(0xFFEF4444),
+            ),
             const SizedBox(height: 14),
             Text(
               message,

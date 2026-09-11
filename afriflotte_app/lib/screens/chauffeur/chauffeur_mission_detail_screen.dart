@@ -213,7 +213,7 @@ class _ChauffeurMissionDetailScreenState
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
@@ -269,7 +269,7 @@ class _ChauffeurMissionDetailScreenState
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
@@ -291,7 +291,9 @@ class _ChauffeurMissionDetailScreenState
                   (observations ?? '').isNotEmpty
                       ? observations!
                       : l10n.chauffeurMissionDetailNoObservations,
-                  style: TextStyle(color: Colors.grey.shade700),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),

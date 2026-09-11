@@ -30,6 +30,8 @@ class _ListeCamionsState extends State<ListeCamions> {
   String? erreur;
   late String _filtre;
 
+  final TextEditingController _searchController = TextEditingController();
+
   static const _filtres = ['TOUS', 'DISPONIBLE', 'INDISPONIBLE'];
 
   @override
@@ -37,17 +39,58 @@ class _ListeCamionsState extends State<ListeCamions> {
     super.initState();
     _filtre = widget.initialFilter ?? 'TOUS';
     chargerCamions();
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   List<Camion> _appliquerFiltre(List<Camion> source) {
+    Iterable<Camion> filtres = source;
+
     switch (_filtre) {
       case 'DISPONIBLE':
-        return source.where((c) => c.disponible).toList();
+        filtres = filtres.where((c) => c.disponible);
+        break;
       case 'INDISPONIBLE':
-        return source.where((c) => !c.disponible).toList();
-      default:
-        return source;
+        filtres = filtres.where((c) => !c.disponible);
+        break;
     }
+
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      filtres = filtres.where(
+        (c) =>
+            c.immatriculation.toLowerCase().contains(query) ||
+            c.marque.toLowerCase().contains(query) ||
+            c.modele.toLowerCase().contains(query) ||
+            c.ville.toLowerCase().contains(query),
+      );
+    }
+
+    return filtres.toList();
+  }
+
+  Widget _buildSearchField() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Rechercher...',
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
   }
 
   String _libelleFiltre(AppLocalizations l10n, String filtre) {
@@ -221,6 +264,7 @@ class _ListeCamionsState extends State<ListeCamions> {
 
     return Column(
       children: [
+        _buildSearchField(),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Row(
@@ -300,7 +344,9 @@ class _CamionCard extends StatelessWidget {
           border: Border.all(color: Theme.of(context).colorScheme.outline),
           boxShadow: [
             BoxShadow(
-              color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.08),
+              color: Theme.of(
+                context,
+              ).colorScheme.shadow.withValues(alpha: 0.08),
               blurRadius: 10,
               offset: const Offset(0, 6),
             ),
