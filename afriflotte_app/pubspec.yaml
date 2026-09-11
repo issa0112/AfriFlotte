@@ -56,6 +56,18 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# Icône d'application générée à partir du logo AfriFlotte (déjà utilisé dans
+# l'app, cf. assets/images/logo_icon.png) — commande : `dart run
+# flutter_launcher_icons`. Pas de découpage en premier-plan/fond adaptatif :
+# le logo source est un carré plein blanc (pas de calque transparent isolant
+# le seul motif), le découper en avant-plan aurait masqué entièrement le fond
+# choisi et risqué de rogner le motif au bord au moment du masque adaptatif.
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/images/logo_icon.png"
+  min_sdk_android: 21
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

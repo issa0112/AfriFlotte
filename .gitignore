@@ -13,6 +13,13 @@ media/**
 !media/**/
 !media/**/.gitkeep
 
+# APK de production suivi en git (comme afriflotte_app/build/web/ plus bas) :
+# Railway n'a pas de stockage persistant pour media/, donc le fichier doit
+# faire partie du dépôt pour survivre à un redéploiement — cf. vitrine/views.py
+# (APK_NOM_FICHIER) et vitrine/templates/vitrine/landing.html (bouton
+# téléchargement, conditionné à l'existence de ce fichier).
+!media/apk/afriflotte-latest.apk
+
 # --- Secrets / config locale ---
 .env
 .env.*
