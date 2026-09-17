@@ -1,7 +1,9 @@
 import base64
+from decimal import Decimal
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -65,10 +67,59 @@ from .serializers import (
 from .constants import (
     PAYS_CEDEAO,
     PAYS_CEDEAO_CHOICES,
+    canaux_paydunya_pour_pays,
+    convertir_vers_xof,
     devise_pour_pays,
     indicatif_pour_pays,
+    moyens_paiement_paydunya,
 )
 from .gateway_paiement import PayDunyaGatewayAdapter, PayDunyaInvalide
+
+
+class PaiementMultiPaysConfigurationTests(TestCase):
+    @override_settings(
+        COMMISSION_AFRIFLOTTE_SEUIL=3000000,
+        COMMISSION_AFRIFLOTTE_TAUX=5,
+        COMMISSION_AFRIFLOTTE_TAUX_SUPERIEUR=4,
+    )
+    def test_commission_par_paliers(self):
+        self.assertEqual(calculer_commission(1000000), (Decimal("50000.00"), Decimal("950000.00")))
+        self.assertEqual(calculer_commission(3000000), (Decimal("150000.00"), Decimal("2850000.00")))
+        self.assertEqual(calculer_commission(3000001), (Decimal("120000.04"), Decimal("2880000.96")))
+
+    def test_paydunya_expose_cartes_partout_et_mobile_money_seulement_ou_il_lopere(self):
+        # ML/SN reflètent les méthodes réellement autorisées sur le compte
+        # marchand PayDunya d'AfriFlotte (pas juste ce que PayDunya documente
+        # publiquement) : pas de Moov Money au Mali, pas d'Orange Money au
+        # Sénégal sur ce compte précis.
+        self.assertEqual(
+            moyens_paiement_paydunya("ML"),
+            {"cartes": ("VISA", "MASTERCARD"), "mobile_money": ("Orange Money",)},
+        )
+        self.assertEqual(
+            moyens_paiement_paydunya("SN")["mobile_money"],
+            ("Expresso", "Free Money", "Wave", "Djamo"),
+        )
+        self.assertEqual(
+            moyens_paiement_paydunya("GH"),
+            {"cartes": ("VISA", "MASTERCARD"), "mobile_money": ()},
+        )
+        self.assertEqual(moyens_paiement_paydunya("XX"), {"cartes": (), "mobile_money": ()})
+
+    def test_conversion_vers_xof(self):
+        self.assertEqual(convertir_vers_xof(Decimal("50000"), "XOF"), Decimal("50000"))
+        self.assertEqual(convertir_vers_xof(1000, "GHS"), Decimal("49000"))
+        with self.assertRaises(ValueError):
+            convertir_vers_xof(100, "USD")
+
+    def test_canaux_paydunya_pour_pays(self):
+        self.assertEqual(canaux_paydunya_pour_pays("ML"), ("card", "orange-money-mali"))
+        self.assertEqual(
+            canaux_paydunya_pour_pays("SN"),
+            ("card", "expresso-senegal", "free-money-senegal", "wave-senegal", "djamo"),
+        )
+        self.assertEqual(canaux_paydunya_pour_pays("GH"), ("card",))
+        self.assertIsNone(canaux_paydunya_pour_pays("XX"))
 
 
 class DemandeTransportSerializerTests(TestCase):
@@ -294,7 +345,7 @@ class PaysCedeaoTests(TestCase):
     """Référentiel `core/constants.py` — miroir Flutter dans
     `afriflotte_app/lib/constants/pays_cedeao.dart`."""
 
-    def test_quinze_pays_cedeao(self):
+    def test_quinze_pays_cedeao_et_quinze_pays_ouverts(self):
         self.assertEqual(len(PAYS_CEDEAO), 15)
         self.assertEqual(len(PAYS_CEDEAO_CHOICES), 15)
 
@@ -410,6 +461,7 @@ class PaysUserChauffeurTests(TestCase):
                 'username': '+2250700000001',
                 'telephone': '+2250700000001',
                 'password': 'secret123',
+                'email': 'transporteur-ci@example.com',
                 'type_compte': 'TRANSPORTEUR',
                 'pays': 'CI',
             },
@@ -419,6 +471,26 @@ class PaysUserChauffeurTests(TestCase):
         self.assertEqual(response.status_code, 201)
         user = User.objects.get(telephone='+2250700000001')
         self.assertEqual(user.pays, 'CI')
+
+    def test_inscription_refuse_type_compte_admin_ou_agent(self):
+        """/api/register/ est public (aucune authentification) : sans ce
+        refus, n'importe qui pouvait s'auto-créer un compte ADMIN ou AGENT
+        juste en le demandant dans le payload d'inscription."""
+        for suffixe, type_compte in enumerate(('ADMIN', 'AGENT'), start=1):
+            telephone = f'+22507000009{suffixe}'
+            response = self.client.post(
+                '/api/register/',
+                {
+                    'username': telephone,
+                    'telephone': telephone,
+                    'password': 'secret123',
+                    'type_compte': type_compte,
+                },
+                format='json',
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertFalse(User.objects.filter(type_compte=type_compte).exists())
 
     def test_inscription_sans_pays_retombe_sur_ml(self):
         """`UserSerializer.create()` doit passer `.get('pays', 'ML')`, pas
@@ -430,6 +502,7 @@ class PaysUserChauffeurTests(TestCase):
                 'username': '+22376000002',
                 'telephone': '+22376000002',
                 'password': 'secret123',
+                'email': 'entreprise-ml@example.com',
                 'type_compte': 'ENTREPRISE',
             },
             format='json',
@@ -508,6 +581,130 @@ class PaysUserChauffeurTests(TestCase):
         self.assertEqual(response.data['pays'], 'CI')
 
 
+class ReinitialisationMotDePasseParEmailTests(TestCase):
+    """`demander_reinitialisation`/`confirmer_reinitialisation` : le code
+    part désormais par email (`envoyer_email_reinitialisation`), jamais dans
+    la réponse API — une version antérieure le renvoyait directement ici
+    (mode démo, aucune passerelle configurée), ce qui permettait à quiconque
+    connaissant un numéro de téléphone de réinitialiser le mot de passe
+    associé sans jamais y avoir accès."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='reset-email',
+            password='ancien-mdp-123',
+            telephone='+22370000099',
+            email='proprietaire@example.com',
+            type_compte='ENTREPRISE',
+        )
+
+    def _code_envoye(self):
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['proprietaire@example.com'])
+        self.user.refresh_from_db()
+        return self.user.code_reinitialisation
+
+    def test_demander_reinitialisation_envoie_un_email_et_ne_renvoie_pas_le_code(self):
+        response = self.client.post(
+            '/api/mot-de-passe-oublie/',
+            {'telephone': '70000099'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('code', response.data)
+
+        code = self._code_envoye()
+        self.assertRegex(code, r'^\d{6}$')
+        self.assertIn(code, mail.outbox[0].body)
+
+    def test_demander_reinitialisation_sans_email_400(self):
+        self.user.email = ''
+        self.user.save(update_fields=['email'])
+
+        response = self.client.post(
+            '/api/mot-de-passe-oublie/',
+            {'telephone': '70000099'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_demander_reinitialisation_telephone_inconnu_404(self):
+        response = self.client.post(
+            '/api/mot-de-passe-oublie/',
+            {'telephone': '70000098'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_cycle_complet_reinitialisation(self):
+        self.client.post(
+            '/api/mot-de-passe-oublie/', {'telephone': '70000099'}, format='json',
+        )
+        code = self._code_envoye()
+
+        response = self.client.post(
+            '/api/mot-de-passe-oublie/confirmer/',
+            {
+                'telephone': '70000099',
+                'code': code,
+                'nouveau_mot_de_passe': 'nouveau-mdp-456',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('nouveau-mdp-456'))
+        self.assertFalse(self.user.code_reinitialisation)
+
+    def test_confirmer_mauvais_code_400(self):
+        self.client.post(
+            '/api/mot-de-passe-oublie/', {'telephone': '70000099'}, format='json',
+        )
+        self._code_envoye()
+
+        response = self.client.post(
+            '/api/mot-de-passe-oublie/confirmer/',
+            {
+                'telephone': '70000099',
+                'code': '000000',
+                'nouveau_mot_de_passe': 'nouveau-mdp-456',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(self.user.check_password('ancien-mdp-123'))
+
+    def test_confirmer_code_expire_400(self):
+        self.client.post(
+            '/api/mot-de-passe-oublie/', {'telephone': '70000099'}, format='json',
+        )
+        code = self._code_envoye()
+
+        self.user.code_reinitialisation_expiration = timezone.now() - timedelta(minutes=1)
+        self.user.save(update_fields=['code_reinitialisation_expiration'])
+
+        response = self.client.post(
+            '/api/mot-de-passe-oublie/confirmer/',
+            {
+                'telephone': '70000099',
+                'code': code,
+                'nouveau_mot_de_passe': 'nouveau-mdp-456',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(self.user.check_password('ancien-mdp-123'))
+
+
 class TelephoneValidationTests(TestCase):
     """`core/telephone.py` : validation/normalisation par plan de numérotation
     (2026-09-01), et intégration dans l'inscription/connexion."""
@@ -578,6 +775,7 @@ class TelephoneValidationTests(TestCase):
                 'username': '99999999',
                 'telephone': '99999999',
                 'password': 'secret123',
+                'email': 'telephone-invalide@example.com',
                 'type_compte': 'TRANSPORTEUR',
                 'pays': 'ML',
             },
@@ -594,6 +792,7 @@ class TelephoneValidationTests(TestCase):
                 'username': '70009999',
                 'telephone': '70009999',
                 'password': 'secret123',
+                'email': 'e164@example.com',
                 'type_compte': 'TRANSPORTEUR',
                 'pays': 'ML',
             },
@@ -616,6 +815,7 @@ class TelephoneValidationTests(TestCase):
                 'username': '70008888',
                 'telephone': '70008888',
                 'password': 'secret123',
+                'email': 'connexion-locale@example.com',
                 'type_compte': 'TRANSPORTEUR',
                 'pays': 'ML',
             },
@@ -826,6 +1026,13 @@ class PhoneTrackingTests(TestCase):
         self.assertEqual(PositionGPS.objects.count(), 0)
 
     def test_matching_creates_propositions_for_available_trucks_in_departure_city(self):
+        # self.camion (setUp) est un CITERNE à Bamako lui aussi : sans cette
+        # ligne, il serait à égalité de score avec matching_truck et le
+        # matching redeviendrait ambigu. Il est de toute façon occupé sur
+        # self.mission dans ce fixture, donc réellement indisponible ici.
+        self.camion.disponible = False
+        self.camion.save(update_fields=['disponible'])
+
         matching_truck = Camion.objects.create(
             proprietaire=self.transporteur,
             type_camion='CITERNE',
@@ -1124,12 +1331,13 @@ class ChauffeurPositionViewTests(TestCase):
             nom='Moussa',
             telephone='0600000031',
             numero_permis='PERMIS-PING-1',
+            code_acces='1234',
         )
 
     def test_ping_position_met_a_jour_le_chauffeur(self):
         response = self.client.post(
             f'/api/chauffeur/{self.chauffeur.id}/position/',
-            {'latitude': 12.6392, 'longitude': -8.0029},
+            {'code_acces': '1234', 'latitude': 12.6392, 'longitude': -8.0029},
             format='json',
         )
 
@@ -1142,7 +1350,7 @@ class ChauffeurPositionViewTests(TestCase):
     def test_chauffeur_introuvable_404(self):
         response = self.client.post(
             '/api/chauffeur/999999/position/',
-            {'latitude': 12.6392, 'longitude': -8.0029},
+            {'code_acces': '1234', 'latitude': 12.6392, 'longitude': -8.0029},
             format='json',
         )
 
@@ -1151,11 +1359,67 @@ class ChauffeurPositionViewTests(TestCase):
     def test_latitude_manquante_400(self):
         response = self.client.post(
             f'/api/chauffeur/{self.chauffeur.id}/position/',
-            {'longitude': -8.0029},
+            {'code_acces': '1234', 'longitude': -8.0029},
             format='json',
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_refuse_mauvais_code_acces(self):
+        # chauffeur_id est un entier séquentiel devinable : sans revérifier
+        # le code d'accès ici, n'importe qui pouvait usurper la position GPS
+        # d'un chauffeur sans jamais le connaître.
+        response = self.client.post(
+            f'/api/chauffeur/{self.chauffeur.id}/position/',
+            {'code_acces': 'faux-code', 'latitude': 12.6392, 'longitude': -8.0029},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+
+class ChauffeurPhotoViewTests(TestCase):
+    """`ChauffeurPhotoView` — ouverte par `chauffeur_id` sans JWT, protégée
+    par le code d'accès rejoué à chaque appel (cf. core/views.py
+    `_refuser_si_mauvais_code_acces`)."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.transporteur = User.objects.create_user(
+            username='transporteur-photo-ch',
+            password='secret123',
+            telephone='0600000060',
+            type_compte='TRANSPORTEUR',
+        )
+        self.chauffeur = Chauffeur.objects.create(
+            transporteur=self.transporteur,
+            nom='Aminata',
+            telephone='0600000061',
+            numero_permis='PERMIS-PHOTO-1',
+            code_acces='1234',
+        )
+
+    def test_modifie_la_photo_avec_le_bon_code(self):
+        response = self.client.patch(
+            f'/api/chauffeur/{self.chauffeur.id}/photo/',
+            {'code_acces': '1234', 'photo': _fichier_image()},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.chauffeur.refresh_from_db()
+        self.assertTrue(bool(self.chauffeur.photo))
+
+    def test_refuse_mauvais_code_acces(self):
+        response = self.client.patch(
+            f'/api/chauffeur/{self.chauffeur.id}/photo/',
+            {'code_acces': 'faux-code', 'photo': _fichier_image()},
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.chauffeur.refresh_from_db()
+        self.assertFalse(bool(self.chauffeur.photo))
 
 
 class TerminerMissionTests(TestCase):
@@ -2331,6 +2595,108 @@ class NotificationTests(TestCase):
         )
         self.assertEqual(notif.proposition_id, proposition.id)
 
+    def test_matching_automatique_previent_aussi_les_autres_transporteurs_eligibles(self):
+        # Un seul camion (le mieux noté) reçoit la proposition automatique,
+        # mais tout transporteur ayant un camion disponible du bon type doit
+        # être prévenu — sinon sa seule chance de découvrir la demande est de
+        # tomber dessus par hasard dans "Demandes disponibles", où elle est
+        # pourtant visible dès sa création (DemandeTransportListCreateView).
+        Camion.objects.create(
+            proprietaire=self.autre_transporteur,
+            type_camion='CITERNE',
+            immatriculation='NOTIF-002',
+            capacite=15000,
+            disponible=True,
+            ville='Ouagadougou',  # ne matche ni ville_depart ni ville_arrivee
+        )
+
+        proposition = proposer_camions_pour_demande(self.demande)
+
+        self.assertEqual(Proposition.objects.filter(demande=self.demande).count(), 1)
+
+        notif_gagnant = Notification.objects.get(
+            destinataire=self.transporteur,
+            type_notification=Notification.Type.NOUVELLE_DEMANDE,
+        )
+        self.assertEqual(notif_gagnant.proposition_id, proposition.id)
+
+        notif_autre = Notification.objects.get(
+            destinataire=self.autre_transporteur,
+            type_notification=Notification.Type.NOUVELLE_DEMANDE,
+        )
+        self.assertIsNone(notif_autre.proposition_id)
+
+    def test_matching_automatique_reactive_un_camion_libre_ayant_deja_une_historique(self):
+        self.camion.disponible = False
+        self.camion.save(update_fields=['disponible'])
+
+        ancien_transporteur = User.objects.create_user(
+            username='transporteur-historique',
+            password='secret123',
+            telephone='0600000093',
+            type_compte='TRANSPORTEUR',
+        )
+        camion_historique = Camion.objects.create(
+            proprietaire=ancien_transporteur,
+            type_camion='CITERNE',
+            immatriculation='HIST-001',
+            capacite=20000,
+            disponible=True,
+            ville='Bamako',
+        )
+        ancienne_demande = DemandeTransport.objects.create(
+            client=self.client_user,
+            type_camion='CITERNE',
+            ville_depart='Bamako',
+            ville_arrivee='Ségou',
+            quantite=5000,
+            date_chargement='2026-08-05',
+            unite='litres',
+            statut='TERMINEE',
+        )
+        ancienne_proposition = Proposition.objects.create(
+            demande=ancienne_demande,
+            transporteur=ancien_transporteur,
+            prix=180000,
+            statut='ACCEPTEE',
+        )
+        ancienne_mission = Mission.objects.create(
+            demande=ancienne_demande,
+            proposition=ancienne_proposition,
+            client=self.client_user,
+            transporteur=ancien_transporteur,
+            prix_final=180000,
+            statut=Mission.Statut.TERMINEE,
+        )
+        MissionCamion.objects.create(
+            mission=ancienne_mission,
+            camion=camion_historique,
+            ordre=1,
+        )
+
+        nouvelle_demande = DemandeTransport.objects.create(
+            client=self.client_user,
+            type_camion='CITERNE',
+            ville_depart='Bamako',
+            ville_arrivee='Ségou',
+            quantite=6000,
+            date_chargement='2026-08-10',
+            unite='litres',
+            statut='OUVERTE',
+        )
+
+        proposition = proposer_camions_pour_demande(nouvelle_demande)
+
+        self.assertIsNotNone(proposition)
+        self.assertEqual(proposition.transporteur, ancien_transporteur)
+        self.assertEqual(
+            Notification.objects.filter(
+                destinataire=ancien_transporteur,
+                type_notification=Notification.Type.NOUVELLE_DEMANDE,
+            ).count(),
+            1,
+        )
+
     def test_creation_proposition_notifie_le_client(self):
         self.client.force_authenticate(user=self.transporteur)
 
@@ -2609,6 +2975,7 @@ class ChauffeurMissionActionTests(TestCase):
             nom='Fatou',
             telephone='0600000052',
             numero_permis='PERMIS-CMA-1',
+            code_acces='1234',
             disponible=True,
         )
         self.autre_chauffeur = Chauffeur.objects.create(
@@ -2616,6 +2983,7 @@ class ChauffeurMissionActionTests(TestCase):
             nom='Autre',
             telephone='0600000053',
             numero_permis='PERMIS-CMA-2',
+            code_acces='5678',
             disponible=True,
         )
         self.demande = DemandeTransport.objects.create(
@@ -2647,16 +3015,28 @@ class ChauffeurMissionActionTests(TestCase):
         )
 
     def test_liste_expose_mission_id_et_statut(self):
-        response = self.client.get(f'/api/chauffeur/{self.chauffeur.id}/missions/')
+        response = self.client.get(
+            f'/api/chauffeur/{self.chauffeur.id}/missions/',
+            {'code_acces': self.chauffeur.code_acces},
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data[0]['mission_id'], self.mission.id)
         self.assertEqual(response.data[0]['mission_statut'], 'PLANIFIEE')
         self.assertEqual(response.data[0]['ville_depart'], 'Bamako')
 
+    def test_liste_refuse_mauvais_code_acces(self):
+        response = self.client.get(
+            f'/api/chauffeur/{self.chauffeur.id}/missions/',
+            {'code_acces': 'faux-code'},
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_demarrer_passe_en_cours_et_bloque_camion_et_chauffeur(self):
         response = self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -2669,9 +3049,24 @@ class ChauffeurMissionActionTests(TestCase):
         self.assertFalse(self.camion.disponible)
         self.assertFalse(self.chauffeur.disponible)
 
+    def test_demarrer_refuse_mauvais_code_acces(self):
+        # chauffeur_id/mission_id sont des entiers séquentiels devinables :
+        # sans revérifier le code d'accès ici, n'importe qui les connaissant
+        # pouvait démarrer une vraie mission (et donc, via terminer, en
+        # déclencher la libération du paiement) sans jamais le connaître.
+        response = self.client.post(
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': 'faux-code'},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.mission.refresh_from_db()
+        self.assertEqual(self.mission.statut, 'PLANIFIEE')
+
     def test_demarrer_notifie_le_transporteur(self):
         self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
 
         self.assertTrue(
@@ -2683,7 +3078,8 @@ class ChauffeurMissionActionTests(TestCase):
 
     def test_demarrer_chauffeur_non_affecte_403(self):
         response = self.client.post(
-            f'/api/chauffeur/{self.autre_chauffeur.id}/missions/{self.mission.id}/demarrer/'
+            f'/api/chauffeur/{self.autre_chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': self.autre_chauffeur.code_acces},
         )
 
         self.assertEqual(response.status_code, 403)
@@ -2693,27 +3089,32 @@ class ChauffeurMissionActionTests(TestCase):
 
     def test_demarrer_mission_deja_en_cours_400(self):
         self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
         response = self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
 
         self.assertEqual(response.status_code, 400)
 
     def test_terminer_avant_demarrage_400(self):
         response = self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/terminer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/terminer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
 
         self.assertEqual(response.status_code, 400)
 
     def test_terminer_libere_camion_et_chauffeur(self):
         self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
         response = self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/terminer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/terminer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -2726,12 +3127,28 @@ class ChauffeurMissionActionTests(TestCase):
         self.assertTrue(self.camion.disponible)
         self.assertTrue(self.chauffeur.disponible)
 
+    def test_terminer_refuse_mauvais_code_acces(self):
+        self.client.post(
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': self.chauffeur.code_acces},
+        )
+        response = self.client.post(
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/terminer/',
+            {'code_acces': 'faux-code'},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.mission.refresh_from_db()
+        self.assertEqual(self.mission.statut, 'EN_COURS')
+
     def test_terminer_notifie_le_transporteur(self):
         self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
         self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/terminer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/terminer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
 
         self.assertTrue(
@@ -2743,17 +3160,20 @@ class ChauffeurMissionActionTests(TestCase):
 
     def test_terminer_chauffeur_non_affecte_403(self):
         self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/{self.mission.id}/demarrer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
         response = self.client.post(
-            f'/api/chauffeur/{self.autre_chauffeur.id}/missions/{self.mission.id}/terminer/'
+            f'/api/chauffeur/{self.autre_chauffeur.id}/missions/{self.mission.id}/terminer/',
+            {'code_acces': self.autre_chauffeur.code_acces},
         )
 
         self.assertEqual(response.status_code, 403)
 
     def test_mission_introuvable_404(self):
         response = self.client.post(
-            f'/api/chauffeur/{self.chauffeur.id}/missions/999999/demarrer/'
+            f'/api/chauffeur/{self.chauffeur.id}/missions/999999/demarrer/',
+            {'code_acces': self.chauffeur.code_acces},
         )
 
         self.assertEqual(response.status_code, 404)
@@ -3177,6 +3597,64 @@ class PayDunyaGatewayAdapterTests(TestCase):
 
         self.assertEqual(resultat['reference'], 'TOKEN-ABC123')
         self.assertEqual(resultat['checkout_url'], 'https://paydunya.com/checkout/abc123')
+        # Mission au Mali -> devise déjà XOF, pas de conversion à tracer.
+        self.assertNotIn('montant_xof', resultat)
+
+    @patch('core.gateway_paiement.requests.post')
+    def test_creer_transaction_convertit_vers_xof_pour_une_devise_etrangere(self, mock_post):
+        """PayDunya ne facture qu'en XOF (aucun paramètre de devise sur son
+        API) : une mission au Ghana (prix en GHS) doit être convertie avant
+        l'envoi, sous peine de facturer 1000 XOF pour un prix de 1000 GHS."""
+        mock_post.return_value = Mock(json=lambda: {
+            'response_code': '00',
+            'response_text': 'https://paydunya.com/checkout/ghs1',
+            'token': 'TOKEN-GHS-1',
+        })
+        mission_gh = _creer_mission_avec_prix(
+            self.client_user, self.transporteur, prix_final=1000, pays_depart='GH',
+        )
+        paiement_gh = creer_paiement_service(mission_gh, 'CARTE', self.client_user)
+        self.assertEqual(paiement_gh.devise, 'GHS')
+
+        resultat = self.adaptateur.creer_transaction(paiement_gh)
+
+        montant_envoye = mock_post.call_args.kwargs['json']['invoice']['total_amount']
+        self.assertEqual(montant_envoye, 49000.0)
+        self.assertEqual(resultat['montant_xof'], Decimal('49000'))
+
+    @patch('core.gateway_paiement.requests.post')
+    def test_creer_transaction_restreint_les_canaux_au_pays_du_client(self, mock_post):
+        """Sans le paramètre `channels`, PayDunya affiche par défaut tout ce
+        qui est autorisé sur le compte marchand (ex. Wave Sénégal à un
+        client malien) — creer_transaction doit toujours le restreindre au
+        pays réel de la mission."""
+        mock_post.return_value = Mock(json=lambda: {
+            'response_code': '00',
+            'response_text': 'https://paydunya.com/checkout/ml1',
+            'token': 'TOKEN-ML-1',
+        })
+
+        self.adaptateur.creer_transaction(self.paiement)  # mission ML (setUp)
+
+        canaux_envoyes = mock_post.call_args.kwargs['json']['invoice']['channels']
+        self.assertEqual(canaux_envoyes, ['card', 'orange-money-mali'])
+
+    @patch('core.gateway_paiement.requests.post')
+    def test_creer_transaction_carte_seule_pour_pays_sans_mobile_money_paydunya(self, mock_post):
+        mock_post.return_value = Mock(json=lambda: {
+            'response_code': '00',
+            'response_text': 'https://paydunya.com/checkout/gh1',
+            'token': 'TOKEN-GH-1',
+        })
+        mission_gh = _creer_mission_avec_prix(
+            self.client_user, self.transporteur, prix_final=1000, pays_depart='GH',
+        )
+        paiement_gh = creer_paiement_service(mission_gh, 'CARTE', self.client_user)
+
+        self.adaptateur.creer_transaction(paiement_gh)
+
+        canaux_envoyes = mock_post.call_args.kwargs['json']['invoice']['channels']
+        self.assertEqual(canaux_envoyes, ['card'])
 
     @patch('core.gateway_paiement.requests.post')
     def test_creer_transaction_echec_leve_une_exception(self, mock_post):
@@ -3288,6 +3766,24 @@ class PaiementWebhookPayDunyaTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.paiement.refresh_from_db()
         self.assertEqual(self.paiement.statut, Paiement.Statut.EN_ATTENTE)
+
+    @patch('core.gateway_paiement.requests.get')
+    def test_ipn_paydunya_accepte_et_ne_traite_pas_double(self, mock_get):
+        mock_get.return_value = Mock(json=lambda: {'status': 'completed'})
+
+        payload = {
+            'token': 'TOKEN-WEBHOOK-TEST',
+            'status': 'completed',
+            'hash': self._hash_valide(),
+        }
+
+        reponse1 = self.client.post('/api/payment/ipn/', payload)
+        reponse2 = self.client.post('/api/payment/ipn/', payload)
+
+        self.assertEqual(reponse1.status_code, 200)
+        self.assertEqual(reponse2.status_code, 200)
+        self.paiement.refresh_from_db()
+        self.assertEqual(self.paiement.statut, Paiement.Statut.SECURISE)
 
 
 class LitigeTests(TestCase):

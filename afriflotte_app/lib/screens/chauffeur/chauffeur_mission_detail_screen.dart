@@ -18,11 +18,13 @@ const _bleuAccent = Color(0xFF2563EB);
 /// mission plutôt qu'un token.
 class ChauffeurMissionDetailScreen extends StatefulWidget {
   final int chauffeurId;
+  final String codeAcces;
   final Map<String, dynamic> mission;
 
   const ChauffeurMissionDetailScreen({
     super.key,
     required this.chauffeurId,
+    required this.codeAcces,
     required this.mission,
   });
 
@@ -90,6 +92,7 @@ class _ChauffeurMissionDetailScreenState
     await _executer(
       () => ApiService.demarrerMissionChauffeur(
         chauffeurId: widget.chauffeurId,
+        codeAcces: widget.codeAcces,
         missionId: missionId,
       ),
       'EN_COURS',
@@ -102,6 +105,7 @@ class _ChauffeurMissionDetailScreenState
     await _executer(
       () => ApiService.terminerMissionChauffeur(
         chauffeurId: widget.chauffeurId,
+        codeAcces: widget.codeAcces,
         missionId: missionId,
       ),
       'TERMINEE',

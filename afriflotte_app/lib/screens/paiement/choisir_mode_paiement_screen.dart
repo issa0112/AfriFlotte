@@ -37,6 +37,30 @@ class ChoisirModePaiementScreen extends StatefulWidget {
 class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
   String _mode = 'CARTE';
   bool _envoi = false;
+  bool _chargementCapacites = true;
+  Map<String, dynamic> _capacites = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _chargerCapacites();
+  }
+
+  Future<void> _chargerCapacites() async {
+    try {
+      final donnees = await PaiementService.moyensPaiement(
+        token: widget.token,
+        pays: widget.mission.paysDepart,
+        montant: widget.mission.prixFinal ?? 0,
+      );
+      if (mounted) setState(() => _capacites = donnees);
+    } catch (_) {
+      // Les cartes et le mode manuel restent utilisables si ce complément UI
+      // ne peut pas être chargé.
+    } finally {
+      if (mounted) setState(() => _chargementCapacites = false);
+    }
+  }
 
   void _erreur(String message) {
     if (!mounted) return;
@@ -56,7 +80,7 @@ class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
 
       if (!mounted) return;
 
-      if (_mode == 'CARTE' && checkoutUrl != null) {
+      if ((_mode == 'CARTE' || _mode == 'MOBILE') && checkoutUrl != null) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => PaiementWebViewScreen(
@@ -84,6 +108,11 @@ class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
         return;
       }
 
+      if (_mode == 'MOBILE') {
+        _erreur('Le lien Mobile Money est indisponible.');
+        return;
+      }
+
       Navigator.of(context).pop(true);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -102,9 +131,20 @@ class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
     final l10n = AppLocalizations.of(context);
     final mission = widget.mission;
     final montant = mission.prixFinal ?? 0;
-    final commission = montant * 0.05;
-    final net = montant - commission;
+    final commission = double.tryParse(
+          _capacites['commission_montant']?.toString() ?? '',
+        ) ??
+        montant * 0.05;
+    final net = double.tryParse(
+          _capacites['montant_transporteur']?.toString() ?? '',
+        ) ??
+        montant - commission;
+    final taux = _capacites['commission_taux']?.toString() ?? '…';
     final devise = mission.devise ?? '';
+    final operateurs = (_capacites['mobile_money'] as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const <String>[];
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -148,7 +188,7 @@ class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
                 ),
                 const SizedBox(height: 8),
                 _LigneMontant(
-                  label: l10n.paiementCommission('5'),
+                  label: l10n.paiementCommission(taux),
                   valeur: commission,
                   devise: devise,
                   couleur: Colors.grey.shade600,
@@ -176,6 +216,19 @@ class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
             selectionne: _mode == 'CARTE',
             onTap: () => setState(() => _mode = 'CARTE'),
           ),
+          if (_chargementCapacites) ...[
+            const SizedBox(height: 10),
+            const LinearProgressIndicator(minHeight: 2),
+          ] else if (operateurs.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _CarteMode(
+              icone: Icons.phone_android_rounded,
+              titre: 'Mobile Money',
+              sousTitre: operateurs.join(' • '),
+              selectionne: _mode == 'MOBILE',
+              onTap: () => setState(() => _mode = 'MOBILE'),
+            ),
+          ],
           const SizedBox(height: 10),
           _CarteMode(
             icone: Icons.payments_rounded,

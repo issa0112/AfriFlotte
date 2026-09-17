@@ -98,7 +98,14 @@ class AppLocalizationsFr extends AppLocalizations {
       'Nom de l\'entreprise / société (optionnel)';
 
   @override
-  String get authEmailLabel => 'Email (optionnel)';
+  String get authEmailLabel => 'Email';
+
+  @override
+  String get authEmailHelper =>
+      'Sert à réinitialiser votre mot de passe en cas d\'oubli';
+
+  @override
+  String get authEmailRequired => 'L\'email est obligatoire';
 
   @override
   String get authEmailInvalid => 'Adresse email invalide';
@@ -159,7 +166,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get forgotSubtitle =>
-      'Entrez le numéro associé à votre compte pour recevoir un code de réinitialisation.';
+      'Entrez le numéro associé à votre compte : nous vous enverrons un code de réinitialisation par email.';
 
   @override
   String get forgotSendCodeButton => 'Envoyer le code';
@@ -169,10 +176,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get forgotVerificationSubtitle =>
-      'Saisissez le code reçu et choisissez un nouveau mot de passe.';
-
-  @override
-  String get forgotDemoModeLabel => 'MODE DÉMO — CODE AFFICHÉ ICI POUR TEST';
+      'Saisissez le code reçu par email et choisissez un nouveau mot de passe.';
 
   @override
   String get forgotCodeLabel => 'Code à 6 chiffres';
@@ -187,7 +191,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get forgotResendCodeInProgress => 'Envoi...';
 
   @override
-  String get forgotNewCodeGenerated => 'Nouveau code généré.';
+  String get forgotNewCodeGenerated => 'Nouveau code envoyé par email.';
 
   @override
   String get forgotNewPasswordLabel => 'Nouveau mot de passe';

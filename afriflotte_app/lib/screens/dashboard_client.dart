@@ -252,7 +252,10 @@ class _ClientHomeState extends State<_ClientHome> {
                     onPressed: () async {
                       await Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => NotificationsScreen(token: token),
+                          builder: (_) => NotificationsScreen(
+                            token: token,
+                            estTransporteur: false,
+                          ),
                         ),
                       );
                       // Le compteur ne se met pas à jour tout seul en

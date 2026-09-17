@@ -9,6 +9,7 @@ import '../../../l10n/generated/app_localizations.dart';
 import '../../../models/camion.dart';
 import '../../../services/camion_service.dart';
 import '../../../widgets/pays_dropdown.dart';
+import '../../../widgets/ville_autocomplete_field.dart';
 
 const _bleuNuit = Color(0xFF102C5C);
 
@@ -359,8 +360,9 @@ class _AjouterCamionState extends State<AjouterCamion> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
+                VilleAutocompleteField(
                   controller: villeController,
+                  pays: pays,
                   decoration: _decoration(
                     l10n.addCamionVille,
                     Icons.location_on_outlined,

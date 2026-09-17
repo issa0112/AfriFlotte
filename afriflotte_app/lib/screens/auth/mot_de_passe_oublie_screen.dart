@@ -35,7 +35,6 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
   bool _nouveauVisible = false;
   bool _confirmationVisible = false;
 
-  String? _codeDemo;
   bool _loading = false;
   bool _renvoiEnCours = false;
 
@@ -56,15 +55,12 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
     setState(() => _loading = true);
 
     try {
-      final reponse = await MotDePasseOublieService.demanderCode(
+      await MotDePasseOublieService.demanderCode(
         _telephoneController.text.trim(),
       );
 
       if (!mounted) return;
-      setState(() {
-        _codeDemo = reponse['code']?.toString();
-        _etape = _Etape.codeEtMotDePasse;
-      });
+      setState(() => _etape = _Etape.codeEtMotDePasse);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_erreur(e))));
@@ -78,12 +74,11 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
     setState(() => _renvoiEnCours = true);
 
     try {
-      final reponse = await MotDePasseOublieService.demanderCode(
+      await MotDePasseOublieService.demanderCode(
         _telephoneController.text.trim(),
       );
 
       if (!mounted) return;
-      setState(() => _codeDemo = reponse['code']?.toString());
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.forgotNewCodeGenerated)),
@@ -242,8 +237,6 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
           const SizedBox(height: 6),
           Text(l10n.forgotVerificationSubtitle, style: authBody()),
           const SizedBox(height: 20),
-          if (_codeDemo != null) _CarteCodeDemo(code: _codeDemo!),
-          const SizedBox(height: 20),
           TextFormField(
             controller: _codeController,
             keyboardType: TextInputType.number,
@@ -371,65 +364,6 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ],
-    );
-  }
-}
-
-/// Encart "code démo" : tant qu'aucune passerelle SMS/email n'est branchée
-/// côté backend, le code de réinitialisation est renvoyé directement dans la
-/// réponse API — cet encart l'affiche en l'assumant clairement, plutôt que
-/// de faire semblant qu'il a été envoyé ailleurs.
-class _CarteCodeDemo extends StatelessWidget {
-  final String code;
-
-  const _CarteCodeDemo({required this.code});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      decoration: BoxDecoration(
-        color: authMintDim.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: authMintDim.withValues(alpha: 0.35), width: 1.4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.science_outlined, size: 15, color: authMintDim),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  l10n.forgotDemoModeLabel,
-                  style: GoogleFonts.jetBrainsMono(
-                    fontSize: 10.5,
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w600,
-                    color: authMintDim,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Center(
-            child: Text(
-              code,
-              style: GoogleFonts.jetBrainsMono(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 8,
-                color: authTextDark,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

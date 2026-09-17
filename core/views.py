@@ -16,7 +16,7 @@ from rest_framework.decorators import permission_classes
 from .models import *
 from .serializers import *
 from .services import *
-from .constants import devise_pour_pays
+from .constants import devise_pour_pays, moyens_paiement_paydunya
 from .telephone import candidats_suffixe_telephone
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
@@ -24,6 +24,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
+from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -387,6 +388,12 @@ def initier_paiement(request, mission_id):
         return Response({"message": "Mission introuvable"}, status=404)
 
     mode = request.data.get('mode')
+    capacites = moyens_paiement_paydunya(mission.demande.pays_depart)
+    if mode == Paiement.Mode.MOBILE and not capacites['mobile_money']:
+        return Response(
+            {"message": "Mobile Money n'est pas disponible pour ce pays."},
+            status=400,
+        )
 
     try:
         paiement = creer_paiement_service(mission, mode, request.user)
@@ -397,14 +404,47 @@ def initier_paiement(request, mission_id):
 
     reponse = PaiementSerializer(paiement).data
 
-    if paiement.mode == Paiement.Mode.CARTE:
-        transaction_psp = initier_paiement_carte_service(paiement)
+    if paiement.mode in (Paiement.Mode.CARTE, Paiement.Mode.MOBILE):
+        try:
+            transaction_psp = initier_paiement_en_ligne_service(paiement)
+        except Exception as e:
+            # Une création PSP refusée ne doit pas laisser une mission bloquée
+            # par un paiement EN_ATTENTE sans référence externe.
+            paiement.delete()
+            logger.warning("Initialisation paiement en ligne refusée : %s", e)
+            return Response({"message": str(e)}, status=400)
         paiement.refresh_from_db()
         reponse = PaiementSerializer(paiement).data
         if transaction_psp.get('checkout_url'):
             reponse['checkout_url'] = transaction_psp['checkout_url']
 
     return Response(reponse, status=201)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def moyens_paiement(request):
+    """Capacités de paiement PayDunya à afficher, filtrées par pays
+    d'encaissement. La carte reste disponible dans toute la CEDEAO (PayDunya
+    ne facture qu'en XOF mais `creer_transaction` convertit automatiquement,
+    cf. constants.convertir_vers_xof) ; le Mobile Money n'est affiché que
+    pour les pays où PayDunya documente un support local officiel — pour le
+    reste, le client voit la carte comme mode de paiement compatible sans
+    qu'on invente de méthode non certifiée."""
+    pays = (request.query_params.get('pays') or '').upper()
+    reponse = {"pays": pays, **moyens_paiement_paydunya(pays)}
+    try:
+        montant = request.query_params.get('montant')
+        if montant is not None:
+            commission, net = calculer_commission(montant)
+            reponse.update({
+                "commission_taux": str(taux_commission_pour_montant(montant)),
+                "commission_montant": str(commission),
+                "montant_transporteur": str(net),
+            })
+    except Exception:
+        return Response({"message": "Montant de paiement invalide."}, status=400)
+    return Response(reponse)
 
 
 @api_view(['POST'])
@@ -472,16 +512,18 @@ def detail_paiement_mission(request, mission_id):
 
 def _extraire_reference_webhook(donnees):
     """Le simulateur envoie un payload plat `{"reference": ..., "statut":
-    ...}`. PayDunya envoie une notification IPN dont le format exact n'est
-    pas garanti à 100% par sa documentation (form-encodé, clé `data`
-    imbriquée — chaîne JSON ou clés séparées selon les cas observés) : on
-    essaie les deux formes plutôt que de supposer une seule. Renvoie
-    `(reference, sous_donnees)` où `sous_donnees` est le dict à passer à
-    `verifier_authenticite_webhook` (contient le `hash` PayDunya s'il y en a
-    un)."""
-    reference = donnees.get('reference')
-    if reference:
-        return reference, donnees
+    ...}`. PayDunya envoie une notification IPN soit en mode "flat"
+    (`{"token": ..., "status": ..., "hash": ...}`) soit en mode "data"
+    (`{"data": {"token": ..., "hash": ...}}`). On accepte les deux formes et
+    les variantes courantes de champs PayDunya afin de ne pas rejeter de
+    notifications légitimes lors d'un déploiement Railway/HTTPS."""
+    if not isinstance(donnees, dict):
+        return None, {}
+
+    for cle in ('reference', 'token', 'invoice_token', 'transaction_id', 'id'):
+        reference = donnees.get(cle)
+        if reference:
+            return str(reference), donnees
 
     brut = donnees.get('data')
     if isinstance(brut, str):
@@ -490,11 +532,77 @@ def _extraire_reference_webhook(donnees):
         except (TypeError, ValueError):
             brut = {}
     if isinstance(brut, dict):
-        return brut.get('token') or brut.get('reference'), brut
+        for cle in ('reference', 'token', 'invoice_token', 'transaction_id', 'id'):
+            reference = brut.get(cle)
+            if reference:
+                return str(reference), brut
+
+    # Cas où le payload est un QueryDict/Mapping mais pas un dict standard.
+    for cle in ('reference', 'token', 'invoice_token', 'transaction_id', 'id'):
+        reference = donnees.get(cle)
+        if reference:
+            return str(reference), donnees
 
     return None, donnees
 
 
+@csrf_exempt
+@api_view(['POST'])
+def paiement_ipn(request):
+    """Endpoint IPN dédié à PayDunya, compatible Railway/HTTPS.
+
+    Il accepte les notifications externes sans authentification Django et
+    vérifie leur authenticité via le hash PayDunya avant de traiter la
+    transaction. Chaque paiement est traité au plus une fois : un statut déjà
+    différent de EN_ATTENTE est considéré comme déjà traité, ce qui protège des
+    doublons de notifications et de replays de callback.
+    """
+    logger.info("IPN PayDunya reçu : %s", dict(request.data))
+
+    if settings.PAIEMENT_GATEWAY != 'paydunya':
+        return Response({"message": "IPN PayDunya désactivé."}, status=200)
+
+    donnees = request.data if isinstance(request.data, dict) else dict(request.data)
+    if not donnees and request.body:
+        try:
+            donnees = json.loads(request.body.decode('utf-8'))
+        except (TypeError, ValueError):
+            donnees = {}
+
+    reference, sous_donnees = _extraire_reference_webhook(donnees)
+    gateway = get_gateway()
+
+    if not gateway.verifier_authenticite_webhook(sous_donnees or donnees):
+        logger.warning("IPN PayDunya rejeté pour hash invalide (%s)", reference)
+        return Response({"message": "Signature invalide."}, status=403)
+
+    if not reference:
+        return Response({"message": "Référence de transaction manquante."}, status=400)
+
+    try:
+        paiement = Paiement.objects.select_related('mission').get(
+            reference_externe=reference,
+            mode__in=(Paiement.Mode.CARTE, Paiement.Mode.MOBILE),
+        )
+    except Paiement.DoesNotExist:
+        return Response({"status": "ignored", "message": "Transaction inconnue."}, status=200)
+
+    if paiement.statut != Paiement.Statut.EN_ATTENTE:
+        return Response({"status": "ok", "message": "Déjà traité.", "paiement": paiement.id}, status=200)
+
+    statut_reel = gateway.verifier_transaction(reference)
+    if statut_reel == "EN_ATTENTE":
+        return Response({"status": "pending", "message": "Paiement en attente.", "paiement": paiement.id}, status=200)
+
+    try:
+        paiement = confirmer_paiement_carte_service(reference, statut_reel)
+    except ValueError as e:
+        return Response({"message": str(e)}, status=404)
+
+    return Response({"status": "ok", "message": "Paiement traité.", "paiement": paiement.id}, status=200)
+
+
+@csrf_exempt
 @api_view(['POST'])
 def paiement_webhook(request):
     """Callback PSP asynchrone confirmant une transaction carte. Route
@@ -870,6 +978,7 @@ class AdminDemandesView(generics.ListAPIView):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def dashboard(request):
 
     user = request.user
@@ -1353,16 +1462,15 @@ def changer_mot_de_passe(request):
 @api_view(['POST'])
 def demander_reinitialisation(request):
     """Étape 1 du "mot de passe oublié" : génère un code à 6 chiffres valable
-    15 minutes. Pas d'authentification requise — c'est précisément le cas où
+    15 minutes et l'envoie par EMAIL à l'adresse enregistrée sur le compte
+    (`envoyer_email_reinitialisation`) — pas de passerelle SMS disponible.
+    Pas d'authentification requise — c'est précisément le cas où
     l'utilisateur ne peut pas se connecter.
 
-    MODE DÉMO : aucune passerelle SMS/email n'est configurée côté backend
-    (aucun EMAIL_BACKEND dans settings.py), donc le code est renvoyé
-    directement dans la réponse plutôt qu'envoyé par un canal externe. À
-    remplacer par un vrai envoi avant toute mise en production — tel quel,
-    n'importe qui connaissant un numéro de téléphone peut réinitialiser le
-    mot de passe associé.
-    """
+    Le code n'apparaît JAMAIS dans la réponse API : une version antérieure
+    le renvoyait directement ici (mode démo, sans envoi réel), ce qui
+    permettait à quiconque connaissant un numéro de téléphone de
+    réinitialiser le mot de passe associé sans jamais y avoir accès."""
 
     serializer = DemandeReinitialisationSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -1381,6 +1489,18 @@ def demander_reinitialisation(request):
             status=404,
         )
 
+    if not user.email:
+        return Response(
+            {
+                "detail": (
+                    "Aucune adresse email n'est enregistrée sur ce compte. "
+                    "Contactez le support AfriFlotte pour réinitialiser votre "
+                    "mot de passe."
+                )
+            },
+            status=400,
+        )
+
     code = ''.join(random.choices(string.digits, k=6))
 
     user.code_reinitialisation = code
@@ -1389,19 +1509,20 @@ def demander_reinitialisation(request):
         update_fields=['code_reinitialisation', 'code_reinitialisation_expiration']
     )
 
+    envoyer_email_reinitialisation(user, code)
+
     return Response({
-        "message": "Code de réinitialisation généré.",
-        "code": code,
+        "message": "Un code de réinitialisation a été envoyé par email.",
         "expire_dans_minutes": 15,
     })
 
 
 @api_view(['POST'])
 def confirmer_reinitialisation(request):
-    """Étape 2 : vérifie le code (non expiré) et applique le nouveau mot de
-    passe. Le code est à usage unique — effacé qu'il ait servi ou non dès
-    qu'un nouveau est demandé, et systématiquement après une réinitialisation
-    réussie."""
+    """Étape 2 : vérifie le code reçu par email (non expiré) et applique le
+    nouveau mot de passe. Le code est à usage unique — effacé qu'il ait
+    servi ou non dès qu'un nouveau est demandé, et systématiquement après
+    une réinitialisation réussie."""
 
     serializer = ConfirmerReinitialisationSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -1789,14 +1910,31 @@ class ChauffeurLoginView(APIView):
     
 
 
+def _refuser_si_mauvais_code_acces(chauffeur, code_recu):
+    """Les comptes chauffeur n'ont pas de JWT : `chauffeur_id` seul dans
+    l'URL est un entier séquentiel devinable/énumérable (contrairement à un
+    token). Sans revérifier le code d'accès à CHAQUE action sensible — pas
+    seulement au login (`ChauffeurLoginView`) — n'importe qui connaissant ou
+    devinant un `chauffeur_id` valide pouvait démarrer/terminer une vraie
+    mission (donc déclencher `liberer_paiement_service`, qui libère les fonds
+    séquestrés), usurper sa position GPS ou changer sa photo, sans jamais
+    connaître son code d'accès. Retourne une Response 403 si le code ne
+    correspond pas, sinon None (à laisser continuer)."""
+    if not chauffeur.code_acces or code_recu != chauffeur.code_acces:
+        return Response({"message": "Code d'accès invalide."}, status=403)
+    return None
+
+
 class ChauffeurPositionView(APIView):
     """Ping de position du téléphone du chauffeur.
 
     Ouvert par `chauffeur_id`, sans JWT, comme `ChauffeurMissionsView` — les
     comptes chauffeur n'ont pas de token aujourd'hui, ce n'est pas cette vue
-    qui change ce modèle d'auth. Indépendant de toute mission : c'est ce qui
-    permet à un camion redevenu disponible sans mission active de rester
-    localisable via le chauffeur qui lui est affecté.
+    qui change ce modèle d'auth (le code d'accès rejoué à chaque appel, cf.
+    `_refuser_si_mauvais_code_acces`, en tient lieu). Indépendant de toute
+    mission : c'est ce qui permet à un camion redevenu disponible sans
+    mission active de rester localisable via le chauffeur qui lui est
+    affecté.
     """
 
     def post(self, request, chauffeur_id):
@@ -1808,6 +1946,10 @@ class ChauffeurPositionView(APIView):
                 {"message": "Chauffeur introuvable."},
                 status=404
             )
+
+        erreur = _refuser_si_mauvais_code_acces(chauffeur, request.data.get('code_acces'))
+        if erreur:
+            return erreur
 
         serializer = ChauffeurPositionSerializer(
             chauffeur,
@@ -1844,6 +1986,10 @@ class ChauffeurPhotoView(APIView):
                 status=404
             )
 
+        erreur = _refuser_si_mauvais_code_acces(chauffeur, request.data.get('code_acces'))
+        if erreur:
+            return erreur
+
         serializer = ChauffeurPhotoSerializer(
             chauffeur,
             data=request.data,
@@ -1865,6 +2011,20 @@ class ChauffeurMissionsView(APIView):
 
 
     def get(self, request, chauffeur_id):
+
+        try:
+            chauffeur = Chauffeur.objects.get(id=chauffeur_id)
+        except Chauffeur.DoesNotExist:
+            return Response(
+                {"message": "Chauffeur introuvable."},
+                status=404
+            )
+
+        erreur = _refuser_si_mauvais_code_acces(
+            chauffeur, request.query_params.get('code_acces')
+        )
+        if erreur:
+            return erreur
 
         missions = MissionCamion.objects.filter(
             chauffeur_id=chauffeur_id
@@ -1891,9 +2051,20 @@ class ChauffeurMissionsView(APIView):
 def chauffeur_demarrer_mission(request, chauffeur_id, mission_id):
     """Équivalent de `accepter_mission` mais déclenché par le chauffeur
     lui-même depuis son tableau de bord : ouvert par `chauffeur_id`/`mission_id`
-    (pas de JWT côté chauffeur), l'appartenance remplace la vérification
-    `mission.transporteur_id == request.user.id` — le chauffeur doit être
-    affecté à un `MissionCamion` de cette mission."""
+    (pas de JWT côté chauffeur), l'appartenance à un `MissionCamion` de cette
+    mission remplace la vérification `mission.transporteur_id ==
+    request.user.id` — mais l'appartenance seule ne suffit pas : ce sont des
+    entiers séquentiels devinables, donc `_refuser_si_mauvais_code_acces`
+    exige aussi le code d'accès du chauffeur, comme au login."""
+
+    try:
+        chauffeur = Chauffeur.objects.get(id=chauffeur_id)
+    except Chauffeur.DoesNotExist:
+        return Response({"message": "Chauffeur introuvable."}, status=404)
+
+    erreur = _refuser_si_mauvais_code_acces(chauffeur, request.data.get('code_acces'))
+    if erreur:
+        return erreur
 
     try:
         mission = Mission.objects.select_related(
@@ -1931,6 +2102,15 @@ def chauffeur_demarrer_mission(request, chauffeur_id, mission_id):
 def chauffeur_terminer_mission(request, chauffeur_id, mission_id):
     """Équivalent chauffeur de `terminer_mission` — voir
     `chauffeur_demarrer_mission` pour le modèle d'autorisation."""
+
+    try:
+        chauffeur = Chauffeur.objects.get(id=chauffeur_id)
+    except Chauffeur.DoesNotExist:
+        return Response({"message": "Chauffeur introuvable."}, status=404)
+
+    erreur = _refuser_si_mauvais_code_acces(chauffeur, request.data.get('code_acces'))
+    if erreur:
+        return erreur
 
     try:
         mission = Mission.objects.select_related(

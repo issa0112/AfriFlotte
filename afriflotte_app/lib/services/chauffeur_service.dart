@@ -147,6 +147,7 @@ class ChauffeurService {
   /// d'en-tête `Authorization` ici.
   static Future<String?> modifierMaPhoto({
     required int chauffeurId,
+    required String codeAcces,
     required XFile photo,
   }) async {
     final octets = await photo.readAsBytes();
@@ -154,6 +155,7 @@ class ChauffeurService {
     final response = await AuthenticatedHttp.multipartPatch(
       Uri.parse('${ApiService.baseUrl}/chauffeur/$chauffeurId/photo/'),
       headers: const {},
+      fields: {'code_acces': codeAcces},
       construireFichiers: () async => [
         http.MultipartFile.fromBytes('photo', octets, filename: photo.name),
       ],

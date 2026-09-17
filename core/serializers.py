@@ -132,6 +132,13 @@ class UserSerializer(serializers.ModelSerializer):
         write_only=True
     )
 
+    # `email` est `blank=True` sur le modèle (hérité d'AbstractUser) mais
+    # doit être obligatoire à l'inscription : c'est désormais le seul canal
+    # de réinitialisation de mot de passe (core/views.py:
+    # demander_reinitialisation) — un compte sans email n'aurait aucun moyen
+    # de récupérer l'accès en cas de mot de passe oublié.
+    email = serializers.EmailField(required=True, allow_blank=False)
+
     class Meta:
         model = User
         fields = [
@@ -146,7 +153,21 @@ class UserSerializer(serializers.ModelSerializer):
             'pays',
         ]
 
+    # `/api/register/` (UserCreateView) est un endpoint public, sans
+    # authentification — seul moyen de créer un compte ENTREPRISE/TRANSPORTEUR.
+    # Sans cette restriction, n'importe qui pouvait s'auto-inscrire en
+    # précisant "type_compte": "ADMIN" ou "AGENT" dans la requête et obtenir
+    # un compte pleinement privilégié. Un compte ADMIN/AGENT ne se crée que
+    # via /admin/ (CustomUserAdmin), par un administrateur déjà authentifié.
+    TYPES_OUVERTS_A_LINSCRIPTION = ('TRANSPORTEUR', 'ENTREPRISE')
+
     def validate(self, attrs):
+        type_compte = attrs.get('type_compte')
+        if type_compte and type_compte not in self.TYPES_OUVERTS_A_LINSCRIPTION:
+            raise serializers.ValidationError({
+                'type_compte': ["Ce type de compte n'est pas disponible à l'inscription."]
+            })
+
         telephone = attrs.get('telephone')
         if telephone:
             pays = attrs.get('pays') or (self.instance.pays if self.instance else 'ML')

@@ -14,9 +14,10 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+import re
+
 from django.contrib import admin
 from django.conf import settings
-from django.conf.urls.static import static
 from django.urls import path, include, re_path
 from django.views.static import serve as servir_fichier_statique
 
@@ -48,10 +49,20 @@ urlpatterns = [
     ),
 
 ]
-urlpatterns += static(
-    settings.MEDIA_URL,
-    document_root=settings.MEDIA_ROOT
-)
+# `django.conf.urls.static.static()` est un no-op dès `DEBUG=False` (sa
+# propre docstring : "Return a URL pattern for serving files in debug
+# mode") — servi ainsi, /media/ répondrait 404 en production dès la mise en
+# ligne (photos camion/chauffeur, preuves de paiement), sans erreur au
+# déploiement pour l'alerter. Remplacé par la même vue que /app/ ci-dessous,
+# sans condition sur DEBUG (cf. avertissement stockage éphémère plus haut
+# dans settings.py : ce n'est qu'un service local, pas encore un CDN/S3).
+urlpatterns += [
+    re_path(
+        r'^%s(?P<path>.*)$' % re.escape(settings.MEDIA_URL.lstrip('/')),
+        servir_fichier_statique,
+        {'document_root': settings.MEDIA_ROOT},
+    ),
+]
 
 # Sert le build Flutter Web (`flutter build web --base-href=/app/`) à
 # `/app/` — nécessaire aussi bien en dev qu'en production tant qu'un seul

@@ -275,8 +275,20 @@ abstract class AppLocalizations {
   /// No description provided for @authEmailLabel.
   ///
   /// In fr, this message translates to:
-  /// **'Email (optionnel)'**
+  /// **'Email'**
   String get authEmailLabel;
+
+  /// No description provided for @authEmailHelper.
+  ///
+  /// In fr, this message translates to:
+  /// **'Sert à réinitialiser votre mot de passe en cas d\'oubli'**
+  String get authEmailHelper;
+
+  /// No description provided for @authEmailRequired.
+  ///
+  /// In fr, this message translates to:
+  /// **'L\'email est obligatoire'**
+  String get authEmailRequired;
 
   /// No description provided for @authEmailInvalid.
   ///
@@ -389,7 +401,7 @@ abstract class AppLocalizations {
   /// No description provided for @forgotSubtitle.
   ///
   /// In fr, this message translates to:
-  /// **'Entrez le numéro associé à votre compte pour recevoir un code de réinitialisation.'**
+  /// **'Entrez le numéro associé à votre compte : nous vous enverrons un code de réinitialisation par email.'**
   String get forgotSubtitle;
 
   /// No description provided for @forgotSendCodeButton.
@@ -407,14 +419,8 @@ abstract class AppLocalizations {
   /// No description provided for @forgotVerificationSubtitle.
   ///
   /// In fr, this message translates to:
-  /// **'Saisissez le code reçu et choisissez un nouveau mot de passe.'**
+  /// **'Saisissez le code reçu par email et choisissez un nouveau mot de passe.'**
   String get forgotVerificationSubtitle;
-
-  /// No description provided for @forgotDemoModeLabel.
-  ///
-  /// In fr, this message translates to:
-  /// **'MODE DÉMO — CODE AFFICHÉ ICI POUR TEST'**
-  String get forgotDemoModeLabel;
 
   /// No description provided for @forgotCodeLabel.
   ///
@@ -443,7 +449,7 @@ abstract class AppLocalizations {
   /// No description provided for @forgotNewCodeGenerated.
   ///
   /// In fr, this message translates to:
-  /// **'Nouveau code généré.'**
+  /// **'Nouveau code envoyé par email.'**
   String get forgotNewCodeGenerated;
 
   /// No description provided for @forgotNewPasswordLabel.

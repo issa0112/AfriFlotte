@@ -316,8 +316,11 @@ class ApiService {
   /// Ping de position envoyé périodiquement par le téléphone du chauffeur,
   /// indépendant de toute mission en cours — c'est ce qui permet à un
   /// camion redevenu disponible de rester localisable via son chauffeur.
+  /// `codeAcces` : requis côté Django (`_refuser_si_mauvais_code_acces`) —
+  /// `chauffeurId` seul est un entier devinable, pas une preuve d'identité.
   static Future<void> envoyerPositionChauffeur({
     required int chauffeurId,
+    required String codeAcces,
     required double latitude,
     required double longitude,
   }) async {
@@ -326,7 +329,11 @@ class ApiService {
           .post(
             Uri.parse('$baseUrl/chauffeur/$chauffeurId/position/'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'latitude': latitude, 'longitude': longitude}),
+            body: jsonEncode({
+              'code_acces': codeAcces,
+              'latitude': latitude,
+              'longitude': longitude,
+            }),
           )
           .timeout(const Duration(seconds: 10));
 
@@ -338,11 +345,15 @@ class ApiService {
     }
   }
 
-  static Future<List<dynamic>> getChauffeurMissions(int chauffeurId) async {
+  static Future<List<dynamic>> getChauffeurMissions(
+    int chauffeurId,
+    String codeAcces,
+  ) async {
     try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/chauffeur/$chauffeurId/missions/'))
-          .timeout(const Duration(seconds: 10));
+      final uri = Uri.parse(
+        '$baseUrl/chauffeur/$chauffeurId/missions/',
+      ).replace(queryParameters: {'code_acces': codeAcces});
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
 
       debugPrint('STATUS MISSIONS CHAUFFEUR : ${response.statusCode}');
       debugPrint('REPONSE MISSIONS CHAUFFEUR : ${response.body}');
@@ -369,10 +380,11 @@ class ApiService {
 
   /// Démarre une mission (PLANIFIEE -> EN_COURS) depuis le tableau de bord
   /// du chauffeur. Ouvert par `chauffeurId`/`missionId`, sans JWT, comme le
-  /// reste des endpoints chauffeur — l'appartenance à la mission est
-  /// vérifiée côté Django (`chauffeur_demarrer_mission`).
+  /// reste des endpoints chauffeur — l'appartenance à la mission ET le code
+  /// d'accès sont vérifiés côté Django (`chauffeur_demarrer_mission`).
   static Future<void> demarrerMissionChauffeur({
     required int chauffeurId,
+    required String codeAcces,
     required int missionId,
   }) async {
     try {
@@ -381,6 +393,8 @@ class ApiService {
             Uri.parse(
               '$baseUrl/chauffeur/$chauffeurId/missions/$missionId/demarrer/',
             ),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'code_acces': codeAcces}),
           )
           .timeout(const Duration(seconds: 15));
 
@@ -400,6 +414,7 @@ class ApiService {
   /// du chauffeur — même modèle d'autorisation que [demarrerMissionChauffeur].
   static Future<void> terminerMissionChauffeur({
     required int chauffeurId,
+    required String codeAcces,
     required int missionId,
   }) async {
     try {
@@ -408,6 +423,8 @@ class ApiService {
             Uri.parse(
               '$baseUrl/chauffeur/$chauffeurId/missions/$missionId/terminer/',
             ),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'code_acces': codeAcces}),
           )
           .timeout(const Duration(seconds: 15));
 

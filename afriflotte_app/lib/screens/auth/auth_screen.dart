@@ -173,6 +173,10 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                 'id': data['chauffeur_id'],
                 'nom': data['nom'],
                 'photo': data['photo'],
+                // Rejoué à chaque action sensible côté Django (démarrer/
+                // terminer une mission, position, photo) — chauffeur_id seul
+                // est un entier devinable, cf. _refuser_si_mauvais_code_acces.
+                'code_acces': _passwordController.text,
               },
             ),
           ),
@@ -633,9 +637,10 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
             style: authBody(color: authTextDark, weight: FontWeight.w500),
-            decoration: authInputDecoration(l10n.authEmailLabel, Icons.mail_outline),
+            decoration: authInputDecoration(l10n.authEmailLabel, Icons.mail_outline)
+                .copyWith(helperText: l10n.authEmailHelper),
             validator: (value) {
-              if (value == null || value.trim().isEmpty) return null;
+              if (value == null || value.trim().isEmpty) return l10n.authEmailRequired;
               return _emailValide.hasMatch(value.trim()) ? null : l10n.authEmailInvalid;
             },
           ),

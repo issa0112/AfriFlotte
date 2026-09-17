@@ -49,10 +49,12 @@ if not DEBUG and SECRET_KEY == _SECRET_KEY_DEV_PAR_DEFAUT:
 
 # Hôtes autorisés à servir des requêtes (obligatoire dès DEBUG=False) :
 # liste séparée par des virgules dans la variable d'environnement
-# ALLOWED_HOSTS (ex: "afriflotte.com,www.afriflotte.com"). Le domaine public
-# que Railway attribue automatiquement au service (RAILWAY_PUBLIC_DOMAIN)
-# est ajouté d'office pour que le déploiement fonctionne immédiatement sur
-# l'URL *.up.railway.app, avant même qu'un domaine personnalisé soit branché.
+# ALLOWED_HOSTS (ex: "web-production-xxxx.up.railway.app,afriflotte.com") —
+# À DÉFINIR EXPLICITEMENT SUR RAILWAY, ne pas compter uniquement sur
+# RAILWAY_PUBLIC_DOMAIN ci-dessous : en pratique cette variable ne s'est pas
+# résolue lors du premier déploiement (2026-09-03, "DisallowedHost" sur tout
+# le site), donc son ajout automatique n'est qu'un bonus best-effort, pas une
+# garantie.
 ALLOWED_HOSTS = [
     hote.strip()
     for hote in os.environ.get('ALLOWED_HOSTS', '').split(',')
@@ -197,6 +199,12 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    # Valeur volontairement modeste (1h) plutôt que le 1 an habituellement
+    # recommandé : HSTS mal réglé peut rendre un domaine injoignable en HTTP
+    # pendant toute sa durée si le HTTPS a un problème (Django lui-même met
+    # en garde dessus) — à augmenter une fois le HTTPS confirmé stable en
+    # production, pas avant.
+    SECURE_HSTS_SECONDS = 3600
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -247,10 +255,12 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
+    # BrowsableAPIRenderer expose une UI HTML explorable sur chaque endpoint
+    # (pratique en dev) — inutile pour les vrais clients (JSON only) et
+    # superflu à exposer publiquement en production.
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
-    ],
+    ] + (['rest_framework.renderers.BrowsableAPIRenderer'] if DEBUG else []),
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend'
     ]
@@ -280,7 +290,9 @@ SIMPLE_JWT = {
 # Commission plateforme prélevée sur chaque paiement (cf. core/services.py,
 # calculer_commission). Centralisée ici plutôt qu'en dur dans services.py
 # pour pouvoir l'ajuster sans toucher au code métier.
-COMMISSION_AFRIFLOTTE_TAUX = Decimal('5.00')
+COMMISSION_AFRIFLOTTE_SEUIL = Decimal(os.environ.get('COMMISSION_AFRIFLOTTE_SEUIL', '3000000'))
+COMMISSION_AFRIFLOTTE_TAUX = Decimal(os.environ.get('COMMISSION_AFRIFLOTTE_TAUX', '5.00'))
+COMMISSION_AFRIFLOTTE_TAUX_SUPERIEUR = Decimal(os.environ.get('COMMISSION_AFRIFLOTTE_TAUX_SUPERIEUR', '4.00'))
 
 # PAIEMENT_GATEWAY reste sur "simulateur" (core/gateway_paiement.py) tant que
 # les clés PayDunya ci-dessous ne sont pas renseignées — passer à "paydunya"
@@ -289,8 +301,10 @@ COMMISSION_AFRIFLOTTE_TAUX = Decimal('5.00')
 # leur introduction : ce sont des identifiants d'argent réel.
 PAIEMENT_GATEWAY = os.environ.get('PAIEMENT_GATEWAY', 'simulateur')
 
-# PayDunya (couvre Mali/Sénégal/Côte d'Ivoire/Bénin/Burkina Faso/Togo) — voir
-# core/gateway_paiement.py:PayDunyaGatewayAdapter. Les 4 clés viennent du
+# PayDunya, disponible dans toute la CEDEAO — voir
+# core/gateway_paiement.py:PayDunyaGatewayAdapter (conversion XOF pour les
+# pays à devise propre) et core/constants.py:PAYDUNYA_MOBILE_MONEY_PAR_PAYS
+# (Mobile Money limité aux pays où PayDunya l'opère). Les 4 clés viennent du
 # tableau de bord PayDunya (mode test = préfixe "test_" sur les clés privée/
 # publique). PAYDUNYA_MODE="test" (par défaut) utilise l'API sandbox,
 # "live" l'API réelle.
@@ -307,6 +321,35 @@ PAYDUNYA_MODE = os.environ.get('PAYDUNYA_MODE', 'test')
 PAIEMENT_RETOUR_BASE_URL = os.environ.get(
     'PAIEMENT_RETOUR_BASE_URL', 'http://127.0.0.1:8000'
 )
+
+
+# ==========================
+# EMAIL (réinitialisation de mot de passe)
+# ==========================
+#
+# La réinitialisation de mot de passe (core/services.py:
+# envoyer_email_reinitialisation) est le seul usage actuel de l'email dans
+# l'app — pas de compte SMS/passerelle disponible pour ce canal (cf.
+# historique de core/views.py:demander_reinitialisation).
+#
+# En dev (DEBUG=True) : les emails s'affichent dans la console au lieu
+# d'être réellement envoyés — aucune configuration n'est nécessaire pour
+# tester le flux localement. En production, un vrai serveur SMTP DOIT être
+# configuré via les variables d'environnement ci-dessous (Railway :
+# Variables du service) ; tant qu'EMAIL_HOST_PASSWORD est vide, l'envoi
+# échouera (loggé, cf. envoyer_email_reinitialisation, jamais une 500 pour
+# l'utilisateur) sans qu'aucun code ne parte réellement.
+EMAIL_BACKEND = (
+    'django.core.mail.backends.console.EmailBackend'
+    if DEBUG else
+    'django.core.mail.backends.smtp.EmailBackend'
+)
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True').strip().lower() in ('1', 'true', 'yes')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'AfriFlotte <no-reply@afriflotte.com>')
 
 
 # ==========================

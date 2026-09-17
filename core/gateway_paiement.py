@@ -2,10 +2,9 @@
 
 Deux adaptateurs existent : `SimulateurGatewayAdapter` (par défaut, aucun
 appel réseau, réussite immédiate — sert au développement/à la démo) et
-`PayDunyaGatewayAdapter` (le vrai prestataire, couvre Mali/Sénégal/Côte
-d'Ivoire/Bénin/Burkina Faso/Togo). Basculer de l'un à l'autre = changer
-`settings.PAIEMENT_GATEWAY`, rien d'autre à toucher dans le reste du module
-paiement (`core/services.py`, `core/views.py`).
+`PayDunyaGatewayAdapter` (le vrai prestataire). Basculer de l'un à l'autre =
+changer `settings.PAIEMENT_GATEWAY`, rien d'autre à toucher dans le reste du
+module paiement (`core/services.py`, `core/views.py`).
 
 Le simulateur utilise un formulaire de carte natif intégré à l'app (le
 numéro/CVV ne quittent jamais l'appareil, cf. `POST
@@ -14,10 +13,10 @@ paiement hébergée** : c'est PayDunya qui affiche le formulaire carte et gère
 la conformité PCI, pas nous — `creer_transaction` renvoie alors une
 `checkout_url` que le client doit ouvrir (dans une WebView intégrée à l'app
 côté Flutter, pas un navigateur externe). `verifier_authenticite_webhook`
-existe parce que chaque PSP authentifie ses notifications différemment
-(PayDunya envoie un hash dans le payload plutôt qu'un header de signature) —
-en faire une méthode d'adaptateur évite d'introduire du code spécifique PSP
-dans la vue webhook, qui doit rester agnostique.
+existe parce qu'un futur PSP pourrait authentifier ses notifications
+autrement que PayDunya (un hash dans le payload) — en faire une méthode
+d'adaptateur évite d'introduire du code spécifique PSP dans la vue webhook,
+qui doit rester agnostique.
 """
 
 import hashlib
@@ -26,6 +25,8 @@ import uuid
 
 import requests
 from django.conf import settings
+
+from .constants import canaux_paydunya_pour_pays, convertir_vers_xof
 
 logger = logging.getLogger(__name__)
 
@@ -86,17 +87,32 @@ class PayDunyaInvalide(Exception):
 
 
 class PayDunyaGatewayAdapter(GatewayPaiement):
-    """Prestataire réel — Mali, Sénégal, Côte d'Ivoire, Bénin, Burkina Faso,
-    Togo. Doc HTTP/JSON : developers.paydunya.com/doc/EN/http_json (accès
-    direct bloqué par leur Cloudflare aux requêtes automatisées — comportement
-    recoupé via leurs SDK PHP/Python officiels open-source).
+    """Prestataire réel, disponible dans toute la CEDEAO.
+
+    Doc HTTP/JSON : developers.paydunya.com/doc/EN/http_json (accès direct
+    bloqué par leur Cloudflare aux requêtes automatisées — comportement
+    recoupé via leurs SDK PHP/Python officiels open-source). Cette doc ne
+    documente aucun paramètre de devise sur `checkout-invoice/create` :
+    PayDunya facture uniquement en XOF, quel que soit le pays du client —
+    `creer_transaction` convertit donc systématiquement `paiement.devise`
+    (potentiellement GHS/NGN/CVE/GMD/GNF/LRD/SLE) vers XOF avant l'appel, cf.
+    `constants.convertir_vers_xof`. Le Mobile Money, lui, n'est opéré par
+    PayDunya que dans un sous-ensemble de la zone (Bénin, Burkina Faso, Côte
+    d'Ivoire, Mali, Sénégal, Togo — cf. `constants.PAYDUNYA_MOBILE_MONEY_PAR_PAYS`,
+    qui reflète les canaux réellement activés sur le compte marchand
+    AfriFlotte, pas juste ce que PayDunya documente publiquement) ; ailleurs,
+    seule la carte est proposée au client. `creer_transaction` restreint la
+    page hébergée à ces canaux via le paramètre `channels` de
+    `checkout-invoice/create` (cf. `constants.canaux_paydunya_pour_pays`) —
+    sans quoi PayDunya affiche par défaut tous les canaux autorisés du
+    compte, quel que soit le pays du client.
 
     Le format exact de la notification IPN (webhook) n'est pas garanti à
     100% par la documentation disponible (POST en
     application/x-www-form-urlencoded, avec une clé `data` imbriquée) : le
-    parsing dans `core/views.py:paiement_webhook` journalise systématiquement
-    la requête brute pour ajustement si le format réel diffère de ce qui est
-    géré ici.
+    parsing dans `core/views.py:_extraire_reference_webhook` journalise
+    systématiquement la requête brute pour ajustement si le format réel
+    diffère de ce qui est géré ici.
 
     PayDunya n'expose aucune API de remboursement liée à la transaction
     d'origine (seulement un décaissement générique non rattaché) —
@@ -121,9 +137,10 @@ class PayDunyaGatewayAdapter(GatewayPaiement):
 
     def creer_transaction(self, paiement):
         base_retour = settings.PAIEMENT_RETOUR_BASE_URL.rstrip("/")
+        montant_xof = convertir_vers_xof(paiement.montant_total, paiement.devise)
         corps = {
             "invoice": {
-                "total_amount": float(paiement.montant_total),
+                "total_amount": float(montant_xof),
                 "description": f"Mission AfriFlotte #{paiement.mission_id}",
             },
             "store": {"name": "AfriFlotte"},
@@ -134,6 +151,14 @@ class PayDunyaGatewayAdapter(GatewayPaiement):
             },
             "custom_data": {"paiement_id": paiement.id},
         }
+        # Restreint la page hébergée aux moyens du pays du client (carte +
+        # Mobile Money local confirmé) — sans ça PayDunya affiche par défaut
+        # tout ce qui est autorisé sur le compte marchand, ex. Wave Sénégal
+        # à un client ghanéen. Absent (None) pour un pays inconnu : on laisse
+        # alors PayDunya décider plutôt que d'envoyer une restriction fausse.
+        canaux = canaux_paydunya_pour_pays(paiement.mission.demande.pays_depart)
+        if canaux:
+            corps["invoice"]["channels"] = list(canaux)
 
         reponse = requests.post(
             f"{self._base_url()}/checkout-invoice/create",
@@ -148,12 +173,19 @@ class PayDunyaGatewayAdapter(GatewayPaiement):
                 donnees.get("response_text") or "Échec de création de la transaction PayDunya."
             )
 
-        return {
+        resultat = {
             "reference": donnees["token"],
             # Le nom de champ PayDunya "response_text" est trompeur : en cas
             # de succès, c'est bien l'URL de la page de paiement hébergée.
             "checkout_url": donnees["response_text"],
         }
+        # Figé uniquement quand une conversion a eu lieu (montant_total est
+        # déjà en XOF sinon) — sert de trace pour la réconciliation/un
+        # remboursement manuel, le taux dans constants.py pouvant changer
+        # entre-temps.
+        if paiement.devise != "XOF":
+            resultat["montant_xof"] = montant_xof
+        return resultat
 
     def verifier_transaction(self, reference):
         try:

@@ -97,7 +97,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authCompanyNameLabel => 'Company name (optional)';
 
   @override
-  String get authEmailLabel => 'Email (optional)';
+  String get authEmailLabel => 'Email';
+
+  @override
+  String get authEmailHelper => 'Used to reset your password if you forget it';
+
+  @override
+  String get authEmailRequired => 'Email is required';
 
   @override
   String get authEmailInvalid => 'Invalid email address';
@@ -158,7 +164,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get forgotSubtitle =>
-      'Enter the phone number linked to your account to receive a reset code.';
+      'Enter the phone number linked to your account: we\'ll email you a reset code.';
 
   @override
   String get forgotSendCodeButton => 'Send code';
@@ -168,10 +174,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get forgotVerificationSubtitle =>
-      'Enter the code you received and choose a new password.';
-
-  @override
-  String get forgotDemoModeLabel => 'DEMO MODE — CODE SHOWN HERE FOR TESTING';
+      'Enter the code you received by email and choose a new password.';
 
   @override
   String get forgotCodeLabel => '6-digit code';
@@ -186,7 +189,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get forgotResendCodeInProgress => 'Sending...';
 
   @override
-  String get forgotNewCodeGenerated => 'New code generated.';
+  String get forgotNewCodeGenerated => 'New code sent by email.';
 
   @override
   String get forgotNewPasswordLabel => 'New password';

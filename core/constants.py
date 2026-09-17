@@ -5,6 +5,8 @@ modification ici (ajout de pays, correction de devise/indicatif...) doit être
 reportée là-bas à la main, aucun outillage de génération commune n'existe.
 """
 
+from decimal import Decimal
+
 # (code ISO 3166-1 alpha-2, nom affiché, code devise ISO 4217, indicatif
 # téléphonique international)
 PAYS_CEDEAO = (
@@ -24,6 +26,97 @@ PAYS_CEDEAO = (
     ("SL", "Sierra Leone", "SLE", "+232"),
     ("TG", "Togo", "XOF", "+228"),
 )
+
+# Pays + opérateurs réellement autorisés sur le compte marchand PayDunya
+# d'AfriFlotte (relevé le 2026-09-17 depuis le tableau de bord PayDunya lui-
+# même — "Méthodes de paiement autorisées" — pas une liste générique trouvée
+# en ligne : deux opérateurs documentés publiquement pour PayDunya ne sont
+# PAS activés sur ce compte : Orange Money au Sénégal, Moov Money au Mali).
+# Le reste de la zone XOF (Guinée-Bissau, Niger) et les 7 pays à devise
+# propre n'ont que la carte. Modifier cette table suffit pour ouvrir un
+# nouvel opérateur/pays dans les deux clients — mais il faut d'abord
+# l'activer sur le compte PayDunya, sans quoi le paiement échouerait
+# réellement malgré l'affichage. Le compte a aussi "MTN Cameroun" activé,
+# ignoré ici : le Cameroun est hors CEDEAO, hors périmètre AfriFlotte.
+#
+# Chaque entrée est (nom affiché, canal PayDunya) — le canal est le slug
+# officiel utilisé par l'API PayDunya (identique à son URL SoftPay, ex.
+# https://app.paydunya.com/api/v1/softpay/orange-money-mali), confirmé par
+# deux relevés indépendants de developers.paydunya.com/doc/EN/softpay. Ce
+# slug sert à restreindre le paramètre `channels` de checkout-invoice/create
+# (cf. gateway_paiement.py) pour que la page PayDunya n'affiche que les
+# moyens du pays du client, pas tout le compte marchand.
+PAYDUNYA_MOBILE_MONEY_PAR_PAYS = {
+    "BJ": (
+        ("Moov Money", "moov-benin"),
+        ("MTN Mobile Money", "mtn-benin"),
+        ("Celtiis Cash", "celtiis-cash"),
+    ),
+    "BF": (
+        ("Orange Money", "orange-money-burkina"),
+        ("Moov Money", "moov-burkina"),
+    ),
+    "CI": (
+        ("Orange Money", "orange-money-ci"),
+        ("MTN Mobile Money", "mtn-ci"),
+        ("Moov Money", "moov-ci"),
+        ("Wave", "wave-ci"),
+        ("Djamo", "djamo"),
+    ),
+    "ML": (
+        ("Orange Money", "orange-money-mali"),
+    ),
+    "SN": (
+        ("Expresso", "expresso-senegal"),
+        ("Free Money", "free-money-senegal"),
+        ("Wave", "wave-senegal"),
+        ("Djamo", "djamo"),
+    ),
+    "TG": (
+        ("T-Money", "t-money-togo"),
+        ("Moov Money", "moov-togo"),
+    ),
+}
+
+
+def moyens_paiement_paydunya(code_pays):
+    """Moyens de paiement PayDunya à afficher pour un pays CEDEAO.
+
+    La carte est offerte partout dans la CEDEAO : le checkout PayDunya est
+    hébergé et ne facture qu'en XOF, donc `creer_transaction` convertit
+    systématiquement (cf. `convertir_vers_xof`) — le pays du client n'est
+    jamais bloquant pour la carte. Le Mobile Money n'est en revanche exposé
+    que pour les pays où PayDunya documente un opérateur local confirmé,
+    pour ne pas promettre une méthode qu'il ne sait pas traiter.
+    """
+    if not code_pays or code_pays not in DEVISE_PAR_PAYS:
+        return {"cartes": (), "mobile_money": ()}
+    return {
+        "cartes": ("VISA", "MASTERCARD"),
+        "mobile_money": tuple(
+            nom for nom, _canal in PAYDUNYA_MOBILE_MONEY_PAR_PAYS.get(code_pays, ())
+        ),
+    }
+
+
+def canaux_paydunya_pour_pays(code_pays):
+    """Canaux PayDunya (paramètre `channels` de checkout-invoice/create) à
+    restreindre pour ce pays, afin que la page de paiement hébergée
+    n'affiche que les moyens pertinents pour le client — pas tout le compte
+    marchand AfriFlotte (ex. un client ghanéen ne doit pas voir Wave Sénégal).
+
+    Retourne toujours "card" en tête (carte disponible partout dans la
+    CEDEAO), puis les canaux Mobile Money confirmés pour ce pays s'il y en a.
+    Retourne None si `code_pays` est inconnu — dans ce cas
+    `PayDunyaGatewayAdapter.creer_transaction` n'envoie aucune restriction
+    plutôt que de deviner, et PayDunya retombe sur son propre affichage par
+    défaut (tous les canaux autorisés du compte).
+    """
+    if not code_pays or code_pays not in DEVISE_PAR_PAYS:
+        return None
+    return ("card",) + tuple(
+        canal for _nom, canal in PAYDUNYA_MOBILE_MONEY_PAR_PAYS.get(code_pays, ())
+    )
 
 # Pour `choices=` sur un CharField : Django attend des paires (valeur, libellé).
 PAYS_CEDEAO_CHOICES = tuple(
@@ -57,6 +150,45 @@ def indicatif_pour_pays(code_pays):
     pour 'ML'), ou None si le code est inconnu. Même logique stricte que
     `devise_pour_pays` : pas de repli silencieux."""
     return INDICATIF_PAR_PAYS.get(code_pays)
+
+
+# Taux de change indicatifs vers XOF pour les pays CEDEAO qui n'ont pas le
+# XOF comme devise — nécessaires car PayDunya (core/gateway_paiement.py) ne
+# facture qu'en XOF, sans paramètre de devise sur son API. Le prix reste
+# affiché au client dans sa devise locale du début à la fin (DEVISE_PAR_PAYS,
+# écrans Flutter) ; seule la création de la transaction PayDunya convertit.
+#
+# Taux approximatifs (relevés le 2026-09-17) à rafraîchir périodiquement —
+# un léger écart n'est pas critique ici : la carte du client fait de toute
+# façon sa propre conversion internationale au moment du débit réel, un
+# détail de taux entre nous et PayDunya n'est qu'une histoire de centimes.
+# CVE fait exception : ancré à l'euro à taux fixe (comme le XOF lui-même à
+# 655.957 XOF/EUR), donc 1 CVE = 655.957 / 110.265 XOF ne bouge jamais.
+TAUX_VERS_XOF = {
+    "GHS": Decimal("49.0"),
+    "NGN": Decimal("0.41"),
+    "GMD": Decimal("7.6"),
+    "GNF": Decimal("0.064"),
+    "LRD": Decimal("3.2"),
+    "CVE": Decimal("5.9481"),
+    "SLE": Decimal("23.1"),
+}
+
+
+def convertir_vers_xof(montant, devise):
+    """Équivalent XOF d'un `montant` dans une `devise` CEDEAO.
+
+    Retourne `montant` inchangé si `devise` est déjà XOF. Lève ValueError si
+    `devise` n'a pas de taux connu dans `TAUX_VERS_XOF`, plutôt que de
+    deviner un taux 1:1 qui facturerait un montant absurde.
+    """
+    montant = Decimal(str(montant))
+    if devise == "XOF":
+        return montant
+    taux = TAUX_VERS_XOF.get(devise)
+    if taux is None:
+        raise ValueError(f"Aucun taux de change connu pour la devise {devise}.")
+    return (montant * taux).quantize(Decimal("1"))
 
 
 # Centralise les choix de type de camion, jusqu'ici dupliqués indépendamment

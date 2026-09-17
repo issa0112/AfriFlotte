@@ -6,6 +6,7 @@ import '../models/app_notification.dart';
 import '../services/notification_service.dart';
 import 'client/missions_client_screen.dart';
 import 'client/propositions_recues_screen.dart';
+import 'transporteur/missions/demandes_disponibles.dart';
 import 'transporteur/missions/mes_missions_screen.dart';
 import 'transporteur/missions/mes_propositions_screen.dart';
 
@@ -55,7 +56,18 @@ String _tempsRelatif(AppLocalizations l10n, DateTime? createdAt) {
 class NotificationsScreen extends StatefulWidget {
   final String token;
 
-  const NotificationsScreen({super.key, required this.token});
+  /// Rôle de l'utilisateur connecté (pas déductible du seul `type` de la
+  /// notification, cf. `_ouvrir` : MISSION_DEMARREE/MISSION_TERMINEE sont
+  /// envoyées au transporteur EN PLUS du client quand c'est le chauffeur qui
+  /// démarre/termine — core/views.py `chauffeur_demarrer_mission`/
+  /// `chauffeur_terminer_mission`).
+  final bool estTransporteur;
+
+  const NotificationsScreen({
+    super.key,
+    required this.token,
+    this.estTransporteur = false,
+  });
 
   @override
   State<NotificationsScreen> createState() => _NotificationsScreenState();
@@ -88,12 +100,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     await future.catchError((_) => <AppNotification>[]);
   }
 
-  // Chaque type de notification a un destinataire fixe côté Django (cf.
-  // core/services.py + core/views.py : NOUVELLE_PROPOSITION va toujours à
-  // `demande.client`, PROPOSITION_ACCEPTEE/REFUSEE et NOUVELLE_DEMANDE vont
-  // toujours au transporteur, MISSION_* vont toujours à `mission.client`) —
-  // le type seul suffit donc à savoir quel écran ouvrir, sans avoir besoin
-  // de connaître le rôle de l'utilisateur connecté ici.
+  // NOUVELLE_PROPOSITION va toujours à `demande.client`, PROPOSITION_ACCEPTEE/
+  // REFUSEE et NOUVELLE_DEMANDE vont toujours au transporteur (cf.
+  // core/services.py) : le type seul suffit pour ces cas-là. Les MISSION_*
+  // en revanche ne suffisent PAS à eux seuls : MISSION_DEMARREE/TERMINEE sont
+  // envoyées à `mission.client` quand l'acteur est le transporteur, mais
+  // AUSSI à `mission.transporteur` quand l'acteur est le chauffeur
+  // (core/views.py `chauffeur_demarrer_mission`/`chauffeur_terminer_mission`)
+  // — d'où `widget.estTransporteur` pour choisir le bon écran de missions.
   Future<void> _ouvrir(AppNotification notification) async {
     if (!notification.lue) {
       try {
@@ -118,10 +132,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         );
         break;
 
-      case 'NOUVELLE_DEMANDE':
       case 'PROPOSITION_REFUSEE':
-        // Reçus par le transporteur : suivi en lecture seule de ses
-        // propositions envoyées (rien à décider ici, contrairement à
+        // Reçu par le transporteur : suivi en lecture seule de sa
+        // proposition envoyée (rien à décider ici, contrairement à
         // NOUVELLE_PROPOSITION côté entreprise).
         await _ouvrirEcranProposition(
           notification,
@@ -130,6 +143,31 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             highlightId: highlightId,
           ),
         );
+        break;
+
+      case 'NOUVELLE_DEMANDE':
+        if (notification.propositionId != null) {
+          // Camion le mieux noté : une proposition a déjà été envoyée
+          // automatiquement pour ce transporteur (cf. core/services.py
+          // proposer_camions_pour_demande).
+          await _ouvrirEcranProposition(
+            notification,
+            (highlightId) => MesPropositionsScreen(
+              token: widget.token,
+              highlightId: highlightId,
+            ),
+          );
+        } else {
+          // Un autre transporteur a eu le meilleur score : celui-ci a
+          // seulement été prévenu qu'un camion à lui correspond, sans
+          // proposition auto-créée — direction la liste où il peut
+          // répondre lui-même.
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => DemandesDisponibles(token: widget.token),
+            ),
+          );
+        }
         break;
 
       case 'PROPOSITION_ACCEPTEE':
@@ -148,7 +186,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'MISSION_ANNULEE':
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => MissionsClientScreen(token: widget.token),
+            builder: (_) => widget.estTransporteur
+                ? MesMissionsScreen(token: widget.token)
+                : MissionsClientScreen(token: widget.token),
           ),
         );
         break;

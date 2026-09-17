@@ -5,9 +5,10 @@ import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 /// Flux "mot de passe oublié" — non authentifié par nature (l'utilisateur ne
-/// peut justement pas se connecter). Voir `core/views.py` côté Django pour le
-/// détail : mode démo tant qu'aucune passerelle SMS/email n'est branchée, le
-/// code de réinitialisation est renvoyé directement dans la réponse.
+/// peut justement pas se connecter). Le code de réinitialisation part par
+/// email à l'adresse enregistrée sur le compte (voir `core/views.py` /
+/// `core/services.py:envoyer_email_reinitialisation` côté Django) — il n'est
+/// plus jamais renvoyé dans la réponse API.
 class MotDePasseOublieService {
   static String _messageErreur(http.Response response) {
     try {
@@ -20,8 +21,8 @@ class MotDePasseOublieService {
     return "Une erreur est survenue (${response.statusCode})";
   }
 
-  /// Retourne `{"code": "482913", "expire_dans_minutes": 15}` — le code est
-  /// affiché tel quel dans l'app (mode démo, voir docstring de la classe).
+  /// Retourne `{"message": "...", "expire_dans_minutes": 15}` — le code
+  /// lui-même n'est jamais présent ici, il part par email.
   static Future<Map<String, dynamic>> demanderCode(String telephone) async {
     final response = await http
         .post(

@@ -45,6 +45,8 @@ class _ChauffeurDashboardScreenState extends State<ChauffeurDashboardScreen> {
   // voir `chauffeur_mission_detail_screen.dart`).
   Map<int, String> _statutsConnus = {};
 
+  String get _codeAcces => _chauffeur['code_acces']?.toString() ?? '';
+
   Future<void> _changerPhoto(XFile fichier) async {
     final chauffeurId = int.tryParse(_chauffeur['id'].toString());
     if (chauffeurId == null) return;
@@ -54,6 +56,7 @@ class _ChauffeurDashboardScreenState extends State<ChauffeurDashboardScreen> {
     try {
       final photoUrl = await ChauffeurService.modifierMaPhoto(
         chauffeurId: chauffeurId,
+        codeAcces: _codeAcces,
         photo: fichier,
       );
 
@@ -128,6 +131,7 @@ class _ChauffeurDashboardScreenState extends State<ChauffeurDashboardScreen> {
           (Position position) {
             ApiService.envoyerPositionChauffeur(
               chauffeurId: chauffeurId,
+              codeAcces: _codeAcces,
               latitude: position.latitude,
               longitude: position.longitude,
             );
@@ -155,6 +159,7 @@ class _ChauffeurDashboardScreenState extends State<ChauffeurDashboardScreen> {
       }
       final result = await ApiService.getChauffeurMissions(
         int.parse(id.toString()),
+        _codeAcces,
       );
       if (!mounted) return;
 
@@ -420,6 +425,7 @@ class _ChauffeurDashboardScreenState extends State<ChauffeurDashboardScreen> {
                         MaterialPageRoute(
                           builder: (_) => ChauffeurMissionDetailScreen(
                             chauffeurId: chauffeurId,
+                            codeAcces: _codeAcces,
                             mission: map,
                           ),
                         ),

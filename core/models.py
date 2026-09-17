@@ -1049,6 +1049,7 @@ class Paiement(models.Model):
 
     class Mode(models.TextChoices):
         CARTE = "CARTE", "Carte bancaire"
+        MOBILE = "MOBILE", "Mobile Money"
         MANUEL = "MANUEL", "Manuel (main à main)"
 
     class Statut(models.TextChoices):
@@ -1080,6 +1081,20 @@ class Paiement(models.Model):
     devise = models.CharField(
         max_length=3,
         help_text="Copie figée de devise_pour_pays(mission.demande.pays_depart) au moment de la création."
+    )
+
+    montant_xof_facture = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        null=True,
+        blank=True,
+        help_text=(
+            "Équivalent XOF réellement envoyé à PayDunya (celui-ci ne facture "
+            "qu'en XOF), figé au moment de la conversion — cf. "
+            "constants.convertir_vers_xof. Nul quand `devise` est déjà XOF "
+            "(montant_total suffit alors) ; ne pas recalculer depuis "
+            "TAUX_VERS_XOF pour un remboursement, ce taux peut changer."
+        ),
     )
 
     commission_taux = models.DecimalField(

@@ -89,7 +89,10 @@ class _DashboardTransporteurState extends State<DashboardTransporteur> {
             onPressed: () async {
               await Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => NotificationsScreen(token: widget.token),
+                  builder: (_) => NotificationsScreen(
+                    token: widget.token,
+                    estTransporteur: true,
+                  ),
                 ),
               );
               chargerDashboard();

@@ -70,6 +70,22 @@ class PaiementService {
     }
   }
 
+  /// Capacités et prévision de commission, toutes deux calculées côté serveur.
+  static Future<Map<String, dynamic>> moyensPaiement({
+    required String token,
+    required String pays,
+    required num montant,
+  }) async {
+    final response = await AuthenticatedHttp.get(
+      Uri.parse(
+        '${ApiService.baseUrl}/paiements/moyens/?pays=$pays&montant=$montant',
+      ),
+      headers: _headers(token),
+    ).timeout(const Duration(seconds: 15));
+    if (response.statusCode == 200) return _decodeMap(response.body);
+    throw Exception(_messageErreur(response.body));
+  }
+
   /// `/paiements/<id>/confirmer-carte/` : appelé juste après que le client a
   /// saisi et validé sa carte dans le formulaire intégré. `marque`/`dernier4`/
   /// `expiration` sont les seules informations transmises — jamais le numéro

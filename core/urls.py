@@ -48,6 +48,8 @@ urlpatterns = [
 
     path("missions/<int:mission_id>/paiement/",detail_paiement_mission,name="paiement-detail-mission"),
     path("missions/<int:mission_id>/paiement/initier/",initier_paiement,name="paiement-initier"),
+    path("paiements/moyens/",moyens_paiement,name="paiement-moyens"),
+    path("payment/ipn/", paiement_ipn, name="payment-ipn"),
     path("paiements/webhook/",paiement_webhook,name="paiement-webhook"),
     path("paiements/retour/",paiement_retour,name="paiement-retour"),
     path("paiements/annule/",paiement_annule,name="paiement-annule"),

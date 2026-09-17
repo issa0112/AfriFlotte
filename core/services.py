@@ -1,10 +1,14 @@
+import logging
 import math
 from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from .constants import devise_pour_pays
 from .gateway_paiement import get_gateway
@@ -48,6 +52,47 @@ def notifier(destinataire, type_notification, message, proposition=None, paiemen
         proposition=proposition,
         paiement=paiement,
     )
+
+
+# ==========================
+# EMAIL
+# ==========================
+
+def envoyer_email_reinitialisation(user, code):
+    """Envoie le code de réinitialisation de mot de passe par email — seul
+    canal disponible (pas de passerelle SMS, cf. historique de
+    core/views.py:demander_reinitialisation, qui renvoyait auparavant le
+    code directement dans la réponse API : une vraie faille de sécurité,
+    n'importe qui connaissant un numéro de téléphone pouvait ainsi
+    réinitialiser le mot de passe associé).
+
+    Ne lève jamais d'exception vers l'appelant : un envoi qui échoue
+    (SMTP mal configuré, service externe indisponible) ne doit pas faire
+    échouer la requête HTTP avec une 500 — le code reste valide 15 minutes,
+    l'utilisateur peut réessayer "renvoyer le code" pendant ce temps si le
+    premier envoi a échoué silencieusement côté serveur. En dev
+    (EMAIL_BACKEND=console), l'email s'affiche dans les logs du serveur au
+    lieu d'être réellement envoyé."""
+    sujet = "Réinitialisation de votre mot de passe AfriFlotte"
+    message = (
+        "Bonjour,\n\n"
+        f"Voici votre code de réinitialisation AfriFlotte : {code}\n"
+        "Ce code est valable 15 minutes.\n\n"
+        "Si vous n'êtes pas à l'origine de cette demande, ignorez cet email : "
+        "votre mot de passe actuel reste inchangé.\n"
+    )
+    try:
+        send_mail(
+            sujet,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception(
+            "Échec de l'envoi de l'email de réinitialisation pour l'utilisateur %s", user.id
+        )
 
 
 # ==========================
@@ -441,13 +486,19 @@ def refuser_proposition_service(proposition, user):
 
 @transaction.atomic
 def proposer_camions_pour_demande(demande):
-    """Crée une proposition automatique avec un matching basé sur la ville, le type de camion et la disponibilité."""
+    """Crée une proposition automatique avec un matching basé sur la ville,
+    le type de camion et la disponibilité.
+
+    Important : `missions__isnull=False` est incorrect pour ce moteur de
+    matching car il exclut les camions ayant déjà servi dans une mission
+    antérieure, même quand ils sont aujourd'hui `disponible=True` et libres.
+    La disponibilité réelle de l'heure est dans le champ `disponible` et le
+    statut actif d'une mission, pas dans l'historique de missions terminées.
+    """
     candidats = list(
         Camion.objects.filter(
             disponible=True,
             type_camion=demande.type_camion,
-        ).exclude(
-            missions__isnull=False,
         ).select_related('proprietaire')
     )
 
@@ -511,6 +562,29 @@ def proposer_camions_pour_demande(demande):
         proposition=proposition,
     )
 
+    # Les autres transporteurs qui ont eux aussi un camion disponible du bon
+    # type ne reçoivent pas de proposition automatique (une seule par
+    # demande, réservée au meilleur score) mais doivent quand même être
+    # prévenus : sans ce notifier, ils ne découvraient la nouvelle demande
+    # qu'en tombant dessus par hasard en parcourant "Demandes disponibles",
+    # alors que la demande y est visible à tous les transporteurs dès sa
+    # création (DemandeTransportListCreateView.get_queryset). Pas de
+    # `proposition` liée ici : `notifications_screen.dart` (Flutter) route
+    # alors vers l'écran de parcours plutôt que vers une proposition
+    # inexistante.
+    autres_transporteurs = {
+        camion.proprietaire_id: camion.proprietaire
+        for camion in candidats
+        if camion.proprietaire_id != transporteur.id
+    }
+    for autre_transporteur in autres_transporteurs.values():
+        notifier(
+            autre_transporteur,
+            Notification.Type.NOUVELLE_DEMANDE,
+            f"Nouvelle demande {demande.ville_depart} → {demande.ville_arrivee} "
+            f"correspond à l'un de vos camions disponibles.",
+        )
+
     # Sans ce notifier, l'entreprise n'apprenait jamais qu'une proposition
     # existait déjà pour sa demande fraîchement créée : seul le transporteur
     # était notifié ci-dessus. Contrairement à PropositionListCreateView.
@@ -548,11 +622,23 @@ def proposer_camions_pour_demande(demande):
 # silencieux si la mission n'a pas de Paiement, pour ne jamais faire échouer
 # ces vues existantes sur une mission qui n'a pas encore de paiement.
 
+def taux_commission_pour_montant(montant_total):
+    """Taux applicable aux paliers AfriFlotte, configurable par environnement."""
+    montant = Decimal(str(montant_total))
+    if montant <= settings.COMMISSION_AFRIFLOTTE_SEUIL:
+        return settings.COMMISSION_AFRIFLOTTE_TAUX
+    return settings.COMMISSION_AFRIFLOTTE_TAUX_SUPERIEUR
+
+
 def calculer_commission(montant_total, taux=None):
-    """(commission_montant, montant_transporteur) pour un montant total et un
-    taux en % (`settings.COMMISSION_AFRIFLOTTE_TAUX` si `taux` omis)."""
+    """Retourne ``(commission, net_transporteur)`` pour un montant donné.
+
+    Sans taux explicite, applique 5 % jusqu'au seuil configuré inclus et le
+    taux supérieur au-delà. L'argument ``taux`` préserve les appels historiques
+    et permet de recalculer une ligne financière déjà figée.
+    """
     if taux is None:
-        taux = settings.COMMISSION_AFRIFLOTTE_TAUX
+        taux = taux_commission_pour_montant(montant_total)
 
     montant_total = Decimal(str(montant_total))
     taux = Decimal(str(taux))
@@ -580,7 +666,7 @@ def creer_paiement_service(mission, mode, user):
     if mission.prix_final is None:
         raise ValueError("Cette mission n'a pas de prix à payer.")
 
-    taux = settings.COMMISSION_AFRIFLOTTE_TAUX
+    taux = taux_commission_pour_montant(mission.prix_final)
     commission_montant, montant_transporteur = calculer_commission(mission.prix_final, taux)
 
     return Paiement.objects.create(
@@ -595,22 +681,31 @@ def creer_paiement_service(mission, mode, user):
 
 
 @transaction.atomic
-def initier_paiement_carte_service(paiement):
+def initier_paiement_en_ligne_service(paiement):
     """Crée la transaction côté passerelle (simulateur par défaut, cf.
     gateway_paiement.py). La confirmation réelle arrive plus tard via
     `confirmer_paiement_carte_service` (webhook) — cette fonction ne fait que
     démarrer la transaction et retenir sa référence."""
-    if paiement.mode != Paiement.Mode.CARTE:
-        raise ValueError("Ce paiement n'est pas en mode carte.")
+    if paiement.mode not in (Paiement.Mode.CARTE, Paiement.Mode.MOBILE):
+        raise ValueError("Ce paiement n'est pas un paiement en ligne.")
     if paiement.statut != Paiement.Statut.EN_ATTENTE:
         raise ValueError("Ce paiement a déjà été initié.")
 
     transaction_psp = get_gateway().creer_transaction(paiement)
 
     paiement.reference_externe = transaction_psp["reference"]
-    paiement.save(update_fields=["reference_externe", "updated_at"])
+    champs = ["reference_externe", "updated_at"]
+    if transaction_psp.get("montant_xof") is not None:
+        paiement.montant_xof_facture = transaction_psp["montant_xof"]
+        champs.append("montant_xof_facture")
+    paiement.save(update_fields=champs)
 
     return transaction_psp
+
+
+def initier_paiement_carte_service(paiement):
+    """Alias conservé pour les appels/API existants."""
+    return initier_paiement_en_ligne_service(paiement)
 
 
 @transaction.atomic
@@ -630,7 +725,10 @@ def confirmer_paiement_carte_service(reference, statut_psp, carte_info=None):
     try:
         paiement = Paiement.objects.select_related(
             'mission__client', 'mission__transporteur', 'mission__demande'
-        ).get(reference_externe=reference, mode=Paiement.Mode.CARTE)
+        ).get(
+            reference_externe=reference,
+            mode__in=(Paiement.Mode.CARTE, Paiement.Mode.MOBILE),
+        )
     except Paiement.DoesNotExist:
         raise ValueError("Transaction introuvable.")
 

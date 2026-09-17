@@ -10,6 +10,7 @@ import '../../services/api_service.dart';
 import '../../services/authenticated_http.dart';
 import '../../services/demande_transport_service.dart';
 import '../../widgets/pays_dropdown.dart';
+import '../../widgets/ville_autocomplete_field.dart';
 
 const _bleuNuit = Color(0xFF102C5C);
 const _bleuAccent = Color(0xFF2563EB);
@@ -345,8 +346,9 @@ class _NouvelleDemandeScreenState extends State<NouvelleDemandeScreen> {
               _sectionTitle(l10n.nouvelleDemandeVilleDepart.toUpperCase()),
               _card(
                 children: [
-                  TextFormField(
+                  VilleAutocompleteField(
                     controller: _departController,
+                    pays: _paysDepart,
                     decoration: _decoration(
                       l10n.nouvelleDemandeVilleDepart,
                       Icons.trip_origin,
@@ -367,8 +369,9 @@ class _NouvelleDemandeScreenState extends State<NouvelleDemandeScreen> {
                     height: 1,
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
+                  VilleAutocompleteField(
                     controller: _arriveeController,
+                    pays: _paysArrivee,
                     decoration: _decoration(
                       l10n.nouvelleDemandeVilleArrivee,
                       Icons.flag_rounded,
