@@ -9,7 +9,12 @@ from .constants import (
     formats_valides_pour_type,
     unite_capacite_pour_type,
 )
-from .telephone import TelephoneInvalide, candidats_suffixe_telephone, valider_et_normaliser
+from .telephone import (
+    TelephoneInvalide,
+    candidats_suffixe_telephone,
+    correspond_localement,
+    valider_et_normaliser,
+)
 
 
 def _url_absolue(fichier, request):
@@ -84,12 +89,20 @@ class TelephoneTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         # Le champ ne contient pas l'indicatif (saisi en local uniquement à
         # la connexion) alors que `telephone` est stocké en E.164 : on
-        # cherche par suffixe plutôt que par égalité stricte. Si plusieurs
-        # comptes correspondent (collision de numéro local entre deux pays,
-        # cas rare), le mot de passe désambiguïse — le premier qui matche
+        # présélectionne par suffixe (index DB), puis on ne garde que les
+        # candidats dont le numéro local (indicatif de LEUR pays retiré)
+        # correspond exactement à la saisie — un suffixe E.164 peut mordre
+        # sur l'indicatif d'un autre pays sans que le numéro local ne
+        # corresponde réellement (cf. `correspond_localement`). Si malgré
+        # tout deux comptes de pays différents ont le même numéro local
+        # (cas rare), le mot de passe désambiguïse — le premier qui matche
         # gagne, exactement comme s'il n'y avait eu qu'un seul candidat.
         q = candidats_suffixe_telephone(telephone)
-        candidats = User.objects.filter(q) if q is not None else User.objects.none()
+        preselection = User.objects.filter(q) if q is not None else User.objects.none()
+        candidats = [
+            candidat for candidat in preselection
+            if correspond_localement(candidat.telephone, candidat.pays, telephone)
+        ]
 
         user = None
         for candidat in candidats:

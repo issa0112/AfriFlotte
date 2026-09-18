@@ -26,7 +26,12 @@ from .models import (
     PropositionCamion,
     User,
 )
-from .telephone import TelephoneInvalide, formater_local, valider_et_normaliser
+from .telephone import (
+    TelephoneInvalide,
+    correspond_localement,
+    formater_local,
+    valider_et_normaliser,
+)
 
 # PNG 1x1 transparent minimal, valide pour Pillow/ImageField.
 _PNG_1X1 = base64.b64decode(
@@ -859,6 +864,52 @@ class TelephoneValidationTests(TestCase):
 
         self.assertEqual(connexion.status_code, 200)
         self.assertEqual(connexion.data['user']['pays'], 'BF')
+
+    # -- correspond_localement : filtre les faux candidats de suffixe --------
+
+    def test_correspond_localement_rejette_collision_de_suffixe_e164(self):
+        """La Guinée (+224) et le Mali (+223) n'ont pas le même nombre de
+        chiffres locaux : l'E.164 guinéen "+224671112222" se termine par
+        "71112222" (le numéro local malien), pure coïncidence de suffixe.
+        `correspond_localement` doit rejeter ce faux candidat."""
+        self.assertFalse(
+            correspond_localement('+224671112222', 'GN', '71112222')
+        )
+        self.assertTrue(
+            correspond_localement('+22371112222', 'ML', '71112222')
+        )
+
+    def test_connexion_filtre_les_faux_candidats_par_suffixe(self):
+        """Avant `correspond_localement`, un compte guinéen dont l'E.164 se
+        termine par coïncidence sur le numéro local malien saisi restait un
+        candidat de connexion : si son mot de passe est réutilisé ailleurs
+        (cas courant), il pouvait passer l'authentification à la place du
+        compte visé. Le filtre doit l'exclure des candidats en amont, avant
+        même la vérification du mot de passe."""
+        User.objects.create_user(
+            username='+224671112222',
+            password='motdepasse-partage',
+            telephone='+224671112222',
+            type_compte='TRANSPORTEUR',
+            pays='GN',
+        )
+        User.objects.create_user(
+            username='+22371112222',
+            password='motdepasse-partage',
+            telephone='+22371112222',
+            type_compte='TRANSPORTEUR',
+            pays='ML',
+        )
+
+        connexion = self.client.post(
+            '/api/login/',
+            {'telephone': '71112222', 'password': 'motdepasse-partage'},
+            format='json',
+        )
+
+        self.assertEqual(connexion.status_code, 200)
+        self.assertEqual(connexion.data['user']['pays'], 'ML')
+        self.assertEqual(connexion.data['user']['telephone'], '+22371112222')
 
 
 class DashboardViewTests(TestCase):

@@ -134,11 +134,15 @@ def valider_et_normaliser(code_pays, telephone_brut):
 
 
 def candidats_suffixe_telephone(telephone_saisi):
-    """`Q` object pour retrouver un compte à partir du seul numéro local
-    saisi à la connexion (sans indicatif) : le numéro stocké est en E.164
-    (indicatif+local), donc on cherche par suffixe plutôt que par égalité.
-    Tente aussi la variante sans le premier zéro, au cas où l'utilisateur
-    compose son numéro comme il le ferait en local (ex. Ghana
+    """`Q` object pour présélectionner en base les comptes dont le numéro
+    E.164 se termine par le numéro local saisi à la connexion (sans
+    indicatif). Simple filtre de performance (index sur `telephone`) : ne
+    garantit PAS que le numéro local correspond réellement, un suffixe
+    E.164 pouvant mordre sur l'indicatif d'un autre pays (ex. indicatif
+    Mali "223" + local "12345678" se termine aussi par "12345678", tout
+    comme l'indicatif Guinée "224" + local "612345678"). La correspondance
+    fiable se fait ensuite avec `correspond_localement` sur chaque candidat.
+    Tente aussi la variante sans le premier zéro (ex. Ghana
     "0244123456"). Renvoie `None` si `telephone_saisi` ne contient aucun
     chiffre (rien à chercher)."""
     chiffres = _NON_CHIFFRE.sub("", telephone_saisi or "")
@@ -153,6 +157,51 @@ def candidats_suffixe_telephone(telephone_saisi):
     for candidat in candidats:
         q |= Q(telephone__endswith=candidat)
     return q
+
+
+def _variantes_chiffres(valeur):
+    """Les chiffres de `valeur` et leur variante sans zéro initial (ex.
+    Ghana "0244123456"), pour une comparaison tolérante à ce zéro aussi bien
+    côté saisie que côté donnée stockée."""
+    chiffres = _NON_CHIFFRE.sub("", valeur or "")
+    if not chiffres:
+        return set()
+    variantes = {chiffres}
+    if chiffres.startswith("0") and len(chiffres) > 1:
+        variantes.add(chiffres[1:])
+    return variantes
+
+
+def correspond_localement(telephone_e164, pays, telephone_saisi):
+    """Vérifie que `telephone_saisi` (numéro tapé à la connexion — en
+    pratique le numéro local seul, mais on tolère aussi l'indicatif inclus)
+    correspond réellement à `telephone_e164` — comparaison exacte sur les
+    chiffres, jamais un simple suffixe. C'est ce qui distingue un vrai
+    candidat d'une coïncidence de suffixe entre deux pays (cf.
+    `candidats_suffixe_telephone`), un suffixe E.164 pouvant mordre sur
+    l'indicatif d'un autre pays sans que le numéro local ne corresponde
+    réellement.
+
+    Compare au numéro national (indicatif de `pays` retiré) quand
+    `telephone_e164` est au format E.164 attendu. Si ce n'est pas le cas
+    (compte historique pas encore migré, stocké en local brut sans
+    indicatif), retombe sur une égalité directe avec `telephone_e164` plutôt
+    que de bloquer la connexion d'un compte existant."""
+    variantes_saisies = _variantes_chiffres(telephone_saisi)
+    if not variantes_saisies:
+        return False
+
+    indicatif = INDICATIF_PAR_PAYS.get(pays)
+    if indicatif and telephone_e164 and telephone_e164.startswith(indicatif):
+        local_stocke = telephone_e164[len(indicatif):]
+        indicatif_chiffres = _NON_CHIFFRE.sub("", indicatif)
+        return (
+            local_stocke in variantes_saisies
+            or f"{indicatif_chiffres}{local_stocke}" in variantes_saisies
+        )
+
+    variantes_stockees = _variantes_chiffres(telephone_e164)
+    return bool(variantes_stockees & variantes_saisies)
 
 
 def formater_local(telephone_e164, code_pays):
