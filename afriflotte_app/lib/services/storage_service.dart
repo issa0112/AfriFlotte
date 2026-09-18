@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 
@@ -8,6 +10,15 @@ class StorageService {
 
   static const String refreshTokenKey = "refresh_token";
 
+  // Sur mobile/desktop, le token est chiffré et stocké hors du périmètre de
+  // la sauvegarde automatique Android/iCloud (contrairement à
+  // SharedPreferences) — ça évite qu'un token d'un autre compte, restauré
+  // depuis un backup, ne connecte silencieusement le mauvais utilisateur au
+  // démarrage. Sur le web, il n'y a pas de backup système équivalent à
+  // craindre, donc on garde SharedPreferences (plus simple, pas de
+  // dépendance à WebCrypto).
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage();
+
 
 
   // Enregistrer le token
@@ -16,14 +27,13 @@ class StorageService {
       String token
   ) async {
 
-    final prefs =
-        await SharedPreferences.getInstance();
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(tokenKey, token);
+      return;
+    }
 
-
-    await prefs.setString(
-      tokenKey,
-      token
-    );
+    await _secureStorage.write(key: tokenKey, value: token);
 
   }
 
@@ -33,13 +43,12 @@ class StorageService {
 
   static Future<String?> getToken() async {
 
-    final prefs =
-        await SharedPreferences.getInstance();
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(tokenKey);
+    }
 
-
-    return prefs.getString(
-      tokenKey
-    );
+    return _secureStorage.read(key: tokenKey);
 
   }
 
@@ -50,14 +59,13 @@ class StorageService {
 
   static Future<void> saveRefreshToken(String refreshToken) async {
 
-    final prefs =
-        await SharedPreferences.getInstance();
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(refreshTokenKey, refreshToken);
+      return;
+    }
 
-
-    await prefs.setString(
-      refreshTokenKey,
-      refreshToken
-    );
+    await _secureStorage.write(key: refreshTokenKey, value: refreshToken);
 
   }
 
@@ -67,13 +75,12 @@ class StorageService {
 
   static Future<String?> getRefreshToken() async {
 
-    final prefs =
-        await SharedPreferences.getInstance();
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(refreshTokenKey);
+    }
 
-
-    return prefs.getString(
-      refreshTokenKey
-    );
+    return _secureStorage.read(key: refreshTokenKey);
 
   }
 
@@ -83,17 +90,15 @@ class StorageService {
 
   static Future<void> clear() async {
 
-    final prefs =
-        await SharedPreferences.getInstance();
+    if (kIsWeb) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(tokenKey);
+      await prefs.remove(refreshTokenKey);
+      return;
+    }
 
-
-    await prefs.remove(
-      tokenKey
-    );
-
-    await prefs.remove(
-      refreshTokenKey
-    );
+    await _secureStorage.delete(key: tokenKey);
+    await _secureStorage.delete(key: refreshTokenKey);
 
   }
 
