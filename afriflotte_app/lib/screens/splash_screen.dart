@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../utils/auth_navigation.dart';
 import 'auth/auth_screen.dart';
+import 'chauffeur/chauffeur_dashboard_screen.dart';
 
 const _bleuFonce = Color(0xFF071A3A);
 const _bleuNuit = Color(0xFF102C5C);
@@ -36,7 +37,7 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     if (token == null || token.isEmpty) {
-      _allerVersConnexion();
+      await _reprendreSessionChauffeur();
       return;
     }
 
@@ -54,6 +55,57 @@ class _SplashScreenState extends State<SplashScreen> {
 
       if (!mounted) return;
 
+      _allerVersConnexion();
+    }
+  }
+
+  // Le compte chauffeur n'a pas de JWT (cf. `ChauffeurLoginView` côté
+  // Django) : reprendre sa session au démarrage, c'est rejouer un login
+  // silencieux avec le telephone+code_acces gardés par `AuthScreen` à la
+  // connexion — exactement ce qu'un vrai login ferait, sans redemander le
+  // code d'accès tant qu'il reste valide.
+  Future<void> _reprendreSessionChauffeur() async {
+    final session = await StorageService.getChauffeurSession();
+    if (session == null) {
+      _allerVersConnexion();
+      return;
+    }
+
+    try {
+      final resultat = await ApiService.chauffeurLogin(
+        session.telephone,
+        session.codeAcces,
+      );
+
+      if (!mounted) return;
+
+      if (resultat["success"] != true) {
+        await StorageService.clear();
+        if (!mounted) return;
+        _allerVersConnexion();
+        return;
+      }
+
+      final data = resultat["data"] ?? {};
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => ChauffeurDashboardScreen(
+            chauffeur: {
+              'id': data['chauffeur_id'],
+              'nom': data['nom'],
+              'photo': data['photo'],
+              'code_acces': session.codeAcces,
+            },
+          ),
+        ),
+        (route) => false,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      // Panne réseau au démarrage, pas forcément un code d'accès devenu
+      // invalide : contrairement à un rejet explicite du serveur, on ne
+      // supprime pas la session pour laisser une reconnexion réussir au
+      // prochain lancement.
       _allerVersConnexion();
     }
   }

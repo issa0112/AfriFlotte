@@ -8,10 +8,12 @@ import '../../constants/statut_style.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/chauffeur_service.dart';
+import '../../services/storage_service.dart';
 import '../../utils/responsive.dart';
 import '../../widgets/avatar_picker.dart';
 import '../../widgets/language_switcher.dart';
 import '../../widgets/theme_switcher.dart';
+import '../auth/auth_screen.dart';
 import 'chauffeur_mission_detail_screen.dart';
 
 const _bleuNuit = Color(0xFF102C5C);
@@ -202,6 +204,15 @@ class _ChauffeurDashboardScreenState extends State<ChauffeurDashboardScreen> {
 
   Color _statutCouleur(String statut) => couleurStatut(statut);
 
+  Future<void> _deconnecter() async {
+    await StorageService.clear();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -221,6 +232,11 @@ class _ChauffeurDashboardScreenState extends State<ChauffeurDashboardScreen> {
           IconButton(
             onPressed: _loadMissions,
             icon: const Icon(Icons.refresh_rounded),
+          ),
+          IconButton(
+            onPressed: _deconnecter,
+            icon: const Icon(Icons.logout_rounded),
+            tooltip: l10n.profilTLogout,
           ),
         ],
       ),

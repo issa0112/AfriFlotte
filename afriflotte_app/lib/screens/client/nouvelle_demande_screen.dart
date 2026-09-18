@@ -346,6 +346,12 @@ class _NouvelleDemandeScreenState extends State<NouvelleDemandeScreen> {
               _sectionTitle(l10n.nouvelleDemandeVilleDepart.toUpperCase()),
               _card(
                 children: [
+                  PaysDropdown(
+                    value: _paysDepart,
+                    label: l10n.nouvelleDemandePaysDepart,
+                    onChanged: (value) => setState(() => _paysDepart = value),
+                  ),
+                  const SizedBox(height: 12),
                   VilleAutocompleteField(
                     controller: _departController,
                     pays: _paysDepart,
@@ -357,18 +363,18 @@ class _NouvelleDemandeScreenState extends State<NouvelleDemandeScreen> {
                         ? l10n.commonRequiredField
                         : null,
                   ),
-                  const SizedBox(height: 12),
-                  PaysDropdown(
-                    value: _paysDepart,
-                    label: l10n.nouvelleDemandePaysDepart,
-                    onChanged: (value) => setState(() => _paysDepart = value),
-                  ),
                   const SizedBox(height: 16),
                   Divider(
                     color: Theme.of(context).colorScheme.outline,
                     height: 1,
                   ),
                   const SizedBox(height: 16),
+                  PaysDropdown(
+                    value: _paysArrivee,
+                    label: l10n.nouvelleDemandePaysArrivee,
+                    onChanged: (value) => setState(() => _paysArrivee = value),
+                  ),
+                  const SizedBox(height: 12),
                   VilleAutocompleteField(
                     controller: _arriveeController,
                     pays: _paysArrivee,
@@ -379,12 +385,6 @@ class _NouvelleDemandeScreenState extends State<NouvelleDemandeScreen> {
                     validator: (value) => value == null || value.trim().isEmpty
                         ? l10n.commonRequiredField
                         : null,
-                  ),
-                  const SizedBox(height: 12),
-                  PaysDropdown(
-                    value: _paysArrivee,
-                    label: l10n.nouvelleDemandePaysArrivee,
-                    onChanged: (value) => setState(() => _paysArrivee = value),
                   ),
                 ],
               ),

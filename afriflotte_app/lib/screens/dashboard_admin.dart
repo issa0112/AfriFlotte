@@ -5,6 +5,7 @@ import '../l10n/generated/app_localizations.dart';
 import '../models/admin_dashboard_model.dart';
 import '../models/revenu_devise.dart';
 import '../services/dashboard_service.dart';
+import '../services/storage_service.dart';
 import '../services/token_refresh_scheduler.dart';
 import '../utils/responsive.dart';
 import '../widgets/app_sidebar.dart';
@@ -16,6 +17,7 @@ import 'admin/admin_litiges_screen.dart';
 import 'admin/admin_missions_screen.dart';
 import 'admin/admin_paiements_screen.dart';
 import 'admin/admin_utilisateurs_screen.dart';
+import 'auth/auth_screen.dart';
 
 const _bleuNuit = Color(0xFF102C5C);
 const _bleuAccent = Color(0xFF2563EB);
@@ -130,6 +132,15 @@ class _DashboardAdminState extends State<DashboardAdmin> {
     MaterialPageRoute(builder: (_) => AdminLitigesScreen(token: widget.token)),
   );
 
+  Future<void> _deconnecter() async {
+    await StorageService.clear();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -141,6 +152,11 @@ class _DashboardAdminState extends State<DashboardAdmin> {
         IconButton(
           icon: const Icon(Icons.refresh_rounded),
           onPressed: chargerDashboard,
+        ),
+        IconButton(
+          icon: const Icon(Icons.logout_rounded),
+          tooltip: l10n.profilTLogout,
+          onPressed: _deconnecter,
         ),
       ],
     );

@@ -360,6 +360,12 @@ class _AjouterCamionState extends State<AjouterCamion> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                PaysDropdown(
+                  value: pays,
+                  label: l10n.addCamionPays,
+                  onChanged: (value) => setState(() => pays = value),
+                ),
+                const SizedBox(height: 16),
                 VilleAutocompleteField(
                   controller: villeController,
                   pays: pays,
@@ -368,12 +374,6 @@ class _AjouterCamionState extends State<AjouterCamion> {
                     Icons.location_on_outlined,
                     hint: l10n.addCamionVilleHint,
                   ),
-                ),
-                const SizedBox(height: 16),
-                PaysDropdown(
-                  value: pays,
-                  label: l10n.addCamionPays,
-                  onChanged: (value) => setState(() => pays = value),
                 ),
                 if (!_modeEdition) ...[
                   const SizedBox(height: 20),
