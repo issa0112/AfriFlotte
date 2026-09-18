@@ -73,6 +73,22 @@ class User(AbstractUser):
         auto_now_add=True
     )
 
+    # Acceptation du "Contrat de Partenariat Transporteur" (core/contrats.py)
+    # — obligatoire pour type_compte == 'TRANSPORTEUR' (cf.
+    # UserSerializer.validate). `version_acceptee` permet de redemander
+    # l'acceptation si le texte change substantiellement, sans avoir besoin
+    # d'une table d'historique séparée : seule la version courante compte.
+    contrat_transporteur_accepte_le = models.DateTimeField(
+        blank=True,
+        null=True
+    )
+
+    contrat_transporteur_version_acceptee = models.CharField(
+        max_length=10,
+        blank=True,
+        default=""
+    )
+
     def __str__(self):
         return self.username
 
@@ -1158,6 +1174,24 @@ class Paiement(models.Model):
         blank=True,
         default="",
         help_text="Format MM/AA, affichage uniquement."
+    )
+
+    # Métadonnées d'affichage uniquement (mode MOBILE), même esprit que les
+    # champs carte_* ci-dessus — le numéro n'a rien de secret comme un CVV,
+    # mais reste renseigné par le client au moment du paiement, potentiellement
+    # différent de `User.telephone` (ex. paiement depuis le numéro d'un
+    # proche), d'où l'intérêt de le figer sur le paiement plutôt que de
+    # toujours retomber sur le compte.
+    mobile_operateur = models.CharField(
+        max_length=40,
+        blank=True,
+        default=""
+    )
+
+    mobile_numero = models.CharField(
+        max_length=20,
+        blank=True,
+        default=""
     )
 
     litige_en_cours = models.BooleanField(

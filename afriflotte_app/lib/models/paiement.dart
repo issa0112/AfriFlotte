@@ -25,6 +25,8 @@ class Paiement {
   final String carteMarque;
   final String carteDernier4;
   final String carteExpiration;
+  final String mobileOperateur;
+  final String mobileNumero;
   final bool litigeEnCours;
   final String? motifRemboursement;
   final DateTime? dateEncaissement;
@@ -56,6 +58,8 @@ class Paiement {
     this.carteMarque = '',
     this.carteDernier4 = '',
     this.carteExpiration = '',
+    this.mobileOperateur = '',
+    this.mobileNumero = '',
     this.litigeEnCours = false,
     this.motifRemboursement,
     this.dateEncaissement,
@@ -91,6 +95,8 @@ class Paiement {
       carteMarque: json['carte_marque']?.toString() ?? '',
       carteDernier4: json['carte_dernier4']?.toString() ?? '',
       carteExpiration: json['carte_expiration']?.toString() ?? '',
+      mobileOperateur: json['mobile_operateur']?.toString() ?? '',
+      mobileNumero: json['mobile_numero']?.toString() ?? '',
       litigeEnCours: json['litige_en_cours'] == true,
       motifRemboursement: json['motif_remboursement']?.toString(),
       dateEncaissement: _asDate(json['date_encaissement']),

@@ -9,33 +9,31 @@ import 'storage_service.dart';
 
 class ApiService {
   static String _extractErrorMessage(Map<String, dynamic> body) {
-    if (body.containsKey("detail") && body["detail"] != null) {
-      final value = body["detail"];
-      if (value is List && value.isNotEmpty) return value.first.toString();
-      return value.toString();
+    // Ordre de priorité pour les champs qu'on sait pouvoir porter une erreur
+    // pertinente à afficher tel quel.
+    const clesConnues = [
+      "detail",
+      "telephone",
+      "password",
+      "non_field_errors",
+      "message",
+    ];
+
+    for (final cle in clesConnues) {
+      final valeur = body[cle];
+      if (valeur == null) continue;
+      if (valeur is List && valeur.isNotEmpty) return valeur.first.toString();
+      if (valeur is! List) return valeur.toString();
     }
 
-    if (body.containsKey("telephone") && body["telephone"] != null) {
-      final value = body["telephone"];
-      if (value is List && value.isNotEmpty) return value.first.toString();
-      return value.toString();
-    }
-
-    if (body.containsKey("password") && body["password"] != null) {
-      final value = body["password"];
-      if (value is List && value.isNotEmpty) return value.first.toString();
-      return value.toString();
-    }
-
-    if (body.containsKey("non_field_errors") &&
-        body["non_field_errors"] != null) {
-      final value = body["non_field_errors"];
-      if (value is List && value.isNotEmpty) return value.first.toString();
-      return value.toString();
-    }
-
-    if (body.containsKey("message") && body["message"] != null) {
-      return body["message"].toString();
+    // Repli générique : n'importe quelle autre erreur de validation DRF par
+    // champ (ex. "accepte_contrat_transporteur") plutôt que de toujours
+    // retomber sur un message générique qui masque la vraie cause — c'est
+    // exactement ce qui rendait "Erreur de connexion" trompeur pour un champ
+    // non listé ci-dessus.
+    for (final valeur in body.values) {
+      if (valeur is List && valeur.isNotEmpty) return valeur.first.toString();
+      if (valeur is String && valeur.isNotEmpty) return valeur;
     }
 
     return "Erreur de connexion";
@@ -203,6 +201,10 @@ class ApiService {
     String? nomEntreprise,
     String? email,
     String pays = 'ML',
+    // Requis côté Django pour type_compte == 'TRANSPORTEUR' seulement (cf.
+    // UserSerializer.validate) — ignoré pour les autres types, inutile de le
+    // rendre `required` ici et de forcer tous les appelants à le fournir.
+    bool accepteContratTransporteur = false,
   }) async {
     try {
       final response = await http
@@ -215,6 +217,7 @@ class ApiService {
               "password": password,
               "type_compte": typeCompte,
               "pays": pays,
+              "accepte_contrat_transporteur": accepteContratTransporteur,
               if (nomEntreprise != null && nomEntreprise.trim().isNotEmpty)
                 "nom_entreprise": nomEntreprise.trim(),
               if (email != null && email.trim().isNotEmpty)

@@ -5,11 +5,10 @@ import '../../l10n/generated/app_localizations.dart';
 import '../../services/mot_de_passe_oublie_service.dart';
 import 'auth_theme.dart';
 
-// Même contrôle que le champ de connexion (auth_screen.dart) : pas de
-// sélecteur de pays ici non plus, donc juste un contrôle structurel.
-final RegExp _telephoneLoginPlausible = RegExp(r'^\d{6,10}$');
+// Même contrôle que le champ email de l'inscription (auth_screen.dart).
+final RegExp _emailValide = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
 
-/// Flux "mot de passe oublié" en 3 étapes (téléphone → code + nouveau mot de
+/// Flux "mot de passe oublié" en 3 étapes (email → code + nouveau mot de
 /// passe → succès), sur son propre écran poussé depuis `AuthScreen`.
 /// Réutilise strictement les briques de `auth_theme.dart` (mêmes couleurs,
 /// mêmes composants) plutôt que d'introduire un style à part.
@@ -20,13 +19,13 @@ class MotDePasseOublieScreen extends StatefulWidget {
   State<MotDePasseOublieScreen> createState() => _MotDePasseOublieScreenState();
 }
 
-enum _Etape { telephone, codeEtMotDePasse, succes }
+enum _Etape { email, codeEtMotDePasse, succes }
 
 class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
-  _Etape _etape = _Etape.telephone;
+  _Etape _etape = _Etape.email;
 
-  final _telephoneFormKey = GlobalKey<FormState>();
-  final _telephoneController = TextEditingController();
+  final _emailFormKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
 
   final _codeFormKey = GlobalKey<FormState>();
   final _codeController = TextEditingController();
@@ -40,7 +39,7 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
 
   @override
   void dispose() {
-    _telephoneController.dispose();
+    _emailController.dispose();
     _codeController.dispose();
     _nouveauMotDePasseController.dispose();
     _confirmationController.dispose();
@@ -50,13 +49,13 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
   String _erreur(Object e) => '$e'.replaceFirst('Exception: ', '');
 
   Future<void> _demanderCode() async {
-    if (!(_telephoneFormKey.currentState?.validate() ?? false)) return;
+    if (!(_emailFormKey.currentState?.validate() ?? false)) return;
 
     setState(() => _loading = true);
 
     try {
       await MotDePasseOublieService.demanderCode(
-        _telephoneController.text.trim(),
+        _emailController.text.trim(),
       );
 
       if (!mounted) return;
@@ -75,7 +74,7 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
 
     try {
       await MotDePasseOublieService.demanderCode(
-        _telephoneController.text.trim(),
+        _emailController.text.trim(),
       );
 
       if (!mounted) return;
@@ -98,7 +97,7 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
 
     try {
       await MotDePasseOublieService.confirmerReinitialisation(
-        telephone: _telephoneController.text.trim(),
+        email: _emailController.text.trim(),
         code: _codeController.text.trim(),
         nouveauMotDePasse: _nouveauMotDePasseController.text,
       );
@@ -140,7 +139,7 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
                       ),
                     ),
                     child: switch (_etape) {
-                      _Etape.telephone => _etapeTelephone(),
+                      _Etape.email => _etapeEmail(),
                       _Etape.codeEtMotDePasse => _etapeCodeEtMotDePasse(),
                       _Etape.succes => _etapeSucces(),
                     },
@@ -167,13 +166,13 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
     );
   }
 
-  Widget _etapeTelephone() {
+  Widget _etapeEmail() {
     final l10n = AppLocalizations.of(context);
 
     return Form(
-      key: _telephoneFormKey,
+      key: _emailFormKey,
       child: Column(
-        key: const ValueKey('etape_telephone'),
+        key: const ValueKey('etape_email'),
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -186,17 +185,15 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
           Text(l10n.forgotSubtitle, style: authBody()),
           const SizedBox(height: 26),
           TextFormField(
-            controller: _telephoneController,
-            keyboardType: TextInputType.phone,
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.done,
             style: authBody(color: authTextDark, weight: FontWeight.w500),
-            decoration: authInputDecoration(l10n.authPhoneLabel, Icons.phone_outlined),
+            decoration: authInputDecoration(l10n.authEmailLabel, Icons.mail_outline),
             onFieldSubmitted: (_) => _demanderCode(),
             validator: (value) {
-              if (value == null || value.trim().isEmpty) return l10n.authPhoneRequired;
-              return _telephoneLoginPlausible.hasMatch(value.trim())
-                  ? null
-                  : l10n.authPhoneInvalid;
+              if (value == null || value.trim().isEmpty) return l10n.authEmailRequired;
+              return _emailValide.hasMatch(value.trim()) ? null : l10n.authEmailInvalid;
             },
           ),
           const SizedBox(height: 26),
@@ -223,7 +220,7 @@ class _MotDePasseOublieScreenState extends State<MotDePasseOublieScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: IconButton(
-              onPressed: () => setState(() => _etape = _Etape.telephone),
+              onPressed: () => setState(() => _etape = _Etape.email),
               icon: const Icon(Icons.arrow_back_rounded, color: authTextDark),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),

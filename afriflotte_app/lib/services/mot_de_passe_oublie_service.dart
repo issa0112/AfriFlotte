@@ -5,10 +5,11 @@ import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 /// Flux "mot de passe oublié" — non authentifié par nature (l'utilisateur ne
-/// peut justement pas se connecter). Le code de réinitialisation part par
-/// email à l'adresse enregistrée sur le compte (voir `core/views.py` /
+/// peut justement pas se connecter). Identifié par email (seul canal de
+/// récupération disponible, pas de passerelle SMS) : c'est aussi à cette
+/// adresse que part le code de réinitialisation (voir `core/views.py` /
 /// `core/services.py:envoyer_email_reinitialisation` côté Django) — il n'est
-/// plus jamais renvoyé dans la réponse API.
+/// jamais renvoyé dans la réponse API.
 class MotDePasseOublieService {
   static String _messageErreur(http.Response response) {
     try {
@@ -23,12 +24,12 @@ class MotDePasseOublieService {
 
   /// Retourne `{"message": "...", "expire_dans_minutes": 15}` — le code
   /// lui-même n'est jamais présent ici, il part par email.
-  static Future<Map<String, dynamic>> demanderCode(String telephone) async {
+  static Future<Map<String, dynamic>> demanderCode(String email) async {
     final response = await http
         .post(
           Uri.parse("${ApiService.baseUrl}/mot-de-passe-oublie/"),
           headers: {"Content-Type": "application/json"},
-          body: jsonEncode({"telephone": telephone}),
+          body: jsonEncode({"email": email}),
         )
         .timeout(const Duration(seconds: 10));
 
@@ -40,7 +41,7 @@ class MotDePasseOublieService {
   }
 
   static Future<void> confirmerReinitialisation({
-    required String telephone,
+    required String email,
     required String code,
     required String nouveauMotDePasse,
   }) async {
@@ -49,7 +50,7 @@ class MotDePasseOublieService {
           Uri.parse("${ApiService.baseUrl}/mot-de-passe-oublie/confirmer/"),
           headers: {"Content-Type": "application/json"},
           body: jsonEncode({
-            "telephone": telephone,
+            "email": email,
             "code": code,
             "nouveau_mot_de_passe": nouveauMotDePasse,
           }),

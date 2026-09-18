@@ -70,4 +70,10 @@ urlpatterns = [
     path("admin/missions/",AdminMissionsView.as_view(),name="admin-missions"),
     path("admin/demandes/",AdminDemandesView.as_view(),name="admin-demandes"),
 
+    path("contrats/paiement/",contrat_paiement_view,name="contrat-paiement"),
+    path("contrats/paiement/pdf/",contrat_paiement_pdf_view,name="contrat-paiement-pdf"),
+    path("contrats/transporteur/",contrat_transporteur_view,name="contrat-transporteur"),
+    path("contrats/transporteur/pdf/",contrat_transporteur_pdf_view,name="contrat-transporteur-pdf"),
+    path("contrats/transporteur/accepter/",accepter_contrat_transporteur_view,name="contrat-transporteur-accepter"),
+
 ]

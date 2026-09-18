@@ -4,6 +4,7 @@ import '../screens/transporteur/transporteur_home.dart';
 import '../screens/dashboard_client.dart';
 import '../screens/dashboard_admin.dart';
 import '../screens/agent/agent_home.dart';
+import '../screens/legal/contrat_transporteur_gate_screen.dart';
 
 /// Route vers le bon écran d'accueil selon `type_compte`, et purge tout
 /// l'historique de navigation en dessous (login/inscription y compris) pour
@@ -19,7 +20,14 @@ void naviguerApresConnexion(
 
   switch (user['type_compte']) {
     case 'TRANSPORTEUR':
-      destination = TransporteurHome(user: user, token: token);
+      // Contrat de partenariat obligatoire (core/contrats.py) : un compte
+      // inscrit avant son introduction, ou dont la version acceptée est
+      // périmée, doit l'accepter avant d'accéder à son espace — cf.
+      // `contrat_transporteur_accepte` renvoyé par `/api/profil/` et par la
+      // connexion elle-même.
+      destination = user['contrat_transporteur_accepte'] == true
+          ? TransporteurHome(user: user, token: token)
+          : ContratTransporteurGateScreen(user: user, token: token);
       break;
 
     case 'ENTREPRISE':

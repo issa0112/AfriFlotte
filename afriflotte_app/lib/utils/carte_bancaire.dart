@@ -116,11 +116,6 @@ String? validerCvv(String cvvBrut, MarqueCarte marque) {
   return null;
 }
 
-/// Message d'erreur (ou `null`) pour le nom du titulaire.
-String? validerNomTitulaire(String nom) {
-  return nom.trim().isEmpty ? 'Le nom du titulaire est obligatoire' : null;
-}
-
 /// 4 derniers chiffres du numéro, pour l'affichage/stockage ("Visa •••• 4242").
 String dernier4(String numeroBrut) {
   final numero = numeroBrut.replaceAll(_nonChiffre, '');

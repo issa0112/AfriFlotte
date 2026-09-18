@@ -100,7 +100,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authEmailLabel => 'Email';
 
   @override
-  String get authEmailHelper => 'Used to reset your password if you forget it';
+  String get authEmailLabelInscription => 'Email (optional)';
+
+  @override
+  String get authEmailHelper =>
+      'Recommended: used to reset your password if you forget it';
 
   @override
   String get authEmailRequired => 'Email is required';
@@ -164,7 +168,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get forgotSubtitle =>
-      'Enter the phone number linked to your account: we\'ll email you a reset code.';
+      'Enter the email address linked to your account: we\'ll send you a reset code.';
 
   @override
   String get forgotSendCodeButton => 'Send code';
@@ -1682,9 +1686,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get paiementCarteNumeroLabel => 'Card number';
 
   @override
-  String get paiementCarteNomLabel => 'Cardholder name';
-
-  @override
   String get paiementCarteExpirationLabel => 'MM/YY';
 
   @override
@@ -1696,6 +1697,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get paiementCarteTraitementEnCours => 'Processing payment…';
+
+  @override
+  String get paiementMobileOperateurLabel => 'Mobile Money operator';
+
+  @override
+  String get paiementMobileNumeroLabel => 'Mobile Money number';
+
+  @override
+  String get paiementMobileNote =>
+      'You will receive a payment confirmation request on this number.';
 
   @override
   String get paiementAnnuleParClient => 'Payment cancelled';
@@ -1803,6 +1814,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Collection recorded, awaiting admin validation.';
 
   @override
+  String get paiementMobileConfirme => 'Mobile Money payment confirmed.';
+
+  @override
   String get adminPaiementsTitle => 'Payments to process';
 
   @override
@@ -1891,4 +1905,66 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get missionsClientFilterAnnulee => 'Cancelled';
+
+  @override
+  String get contratChargementErreur => 'Unable to load this contract.';
+
+  @override
+  String contratVersionLabel(String date) {
+    return 'Version of $date';
+  }
+
+  @override
+  String get contratTelechargerPdf => 'Download as PDF';
+
+  @override
+  String get contratPaiementTitre => 'Payment terms';
+
+  @override
+  String get contratPaiementLien => 'View the payment terms';
+
+  @override
+  String get contratTransporteurTitre => 'Carrier partnership agreement';
+
+  @override
+  String get contratTransporteurLireLien =>
+      'Read the carrier partnership agreement';
+
+  @override
+  String get contratTransporteurLegal => 'Carrier agreement';
+
+  @override
+  String get contratTransporteurLegalSousTitre =>
+      'Read, download or check the acceptance date';
+
+  @override
+  String contratAccepteLe(String date) {
+    return 'Accepted on $date';
+  }
+
+  @override
+  String get authAccepteContratPrefixe => 'I have read and accept the ';
+
+  @override
+  String get authAccepteContratLien => 'carrier partnership agreement';
+
+  @override
+  String get authAccepteContratRequis =>
+      'You must accept the agreement to create a carrier account';
+
+  @override
+  String get contratGateTitre => 'Before you continue';
+
+  @override
+  String get contratGateSousTitre =>
+      'This agreement governs your partnership with AfriFlotte: please read it before continuing.';
+
+  @override
+  String get contratGateCheckbox => 'I have read and accept this agreement';
+
+  @override
+  String get contratGateAccepter => 'Accept and continue';
+
+  @override
+  String get contratGateDeconnexion => 'Log out';
 }

@@ -278,10 +278,16 @@ abstract class AppLocalizations {
   /// **'Email'**
   String get authEmailLabel;
 
+  /// No description provided for @authEmailLabelInscription.
+  ///
+  /// In fr, this message translates to:
+  /// **'Email (optionnel)'**
+  String get authEmailLabelInscription;
+
   /// No description provided for @authEmailHelper.
   ///
   /// In fr, this message translates to:
-  /// **'Sert à réinitialiser votre mot de passe en cas d\'oubli'**
+  /// **'Recommandé : sert à réinitialiser votre mot de passe en cas d\'oubli'**
   String get authEmailHelper;
 
   /// No description provided for @authEmailRequired.
@@ -401,7 +407,7 @@ abstract class AppLocalizations {
   /// No description provided for @forgotSubtitle.
   ///
   /// In fr, this message translates to:
-  /// **'Entrez le numéro associé à votre compte : nous vous enverrons un code de réinitialisation par email.'**
+  /// **'Entrez l\'adresse email associée à votre compte : nous vous enverrons un code de réinitialisation.'**
   String get forgotSubtitle;
 
   /// No description provided for @forgotSendCodeButton.
@@ -3218,12 +3224,6 @@ abstract class AppLocalizations {
   /// **'Numéro de carte'**
   String get paiementCarteNumeroLabel;
 
-  /// No description provided for @paiementCarteNomLabel.
-  ///
-  /// In fr, this message translates to:
-  /// **'Nom du titulaire'**
-  String get paiementCarteNomLabel;
-
   /// No description provided for @paiementCarteExpirationLabel.
   ///
   /// In fr, this message translates to:
@@ -3247,6 +3247,24 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Traitement du paiement…'**
   String get paiementCarteTraitementEnCours;
+
+  /// No description provided for @paiementMobileOperateurLabel.
+  ///
+  /// In fr, this message translates to:
+  /// **'Opérateur Mobile Money'**
+  String get paiementMobileOperateurLabel;
+
+  /// No description provided for @paiementMobileNumeroLabel.
+  ///
+  /// In fr, this message translates to:
+  /// **'Numéro Mobile Money'**
+  String get paiementMobileNumeroLabel;
+
+  /// No description provided for @paiementMobileNote.
+  ///
+  /// In fr, this message translates to:
+  /// **'Vous recevrez une demande de confirmation du paiement sur ce numéro.'**
+  String get paiementMobileNote;
 
   /// No description provided for @paiementAnnuleParClient.
   ///
@@ -3446,6 +3464,12 @@ abstract class AppLocalizations {
   /// **'Encaissement enregistré, en attente de validation admin.'**
   String get agentEncaissementConfirme;
 
+  /// No description provided for @paiementMobileConfirme.
+  ///
+  /// In fr, this message translates to:
+  /// **'Paiement Mobile Money confirmé.'**
+  String get paiementMobileConfirme;
+
   /// No description provided for @adminPaiementsTitle.
   ///
   /// In fr, this message translates to:
@@ -3625,6 +3649,114 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Annulées'**
   String get missionsClientFilterAnnulee;
+
+  /// No description provided for @contratChargementErreur.
+  ///
+  /// In fr, this message translates to:
+  /// **'Impossible de charger ce contrat.'**
+  String get contratChargementErreur;
+
+  /// No description provided for @contratVersionLabel.
+  ///
+  /// In fr, this message translates to:
+  /// **'Version du {date}'**
+  String contratVersionLabel(String date);
+
+  /// No description provided for @contratTelechargerPdf.
+  ///
+  /// In fr, this message translates to:
+  /// **'Télécharger en PDF'**
+  String get contratTelechargerPdf;
+
+  /// No description provided for @contratPaiementTitre.
+  ///
+  /// In fr, this message translates to:
+  /// **'Conditions de paiement'**
+  String get contratPaiementTitre;
+
+  /// No description provided for @contratPaiementLien.
+  ///
+  /// In fr, this message translates to:
+  /// **'Consulter les conditions de paiement'**
+  String get contratPaiementLien;
+
+  /// No description provided for @contratTransporteurTitre.
+  ///
+  /// In fr, this message translates to:
+  /// **'Contrat de partenariat transporteur'**
+  String get contratTransporteurTitre;
+
+  /// No description provided for @contratTransporteurLireLien.
+  ///
+  /// In fr, this message translates to:
+  /// **'Lire le contrat de partenariat transporteur'**
+  String get contratTransporteurLireLien;
+
+  /// No description provided for @contratTransporteurLegal.
+  ///
+  /// In fr, this message translates to:
+  /// **'Contrat transporteur'**
+  String get contratTransporteurLegal;
+
+  /// No description provided for @contratTransporteurLegalSousTitre.
+  ///
+  /// In fr, this message translates to:
+  /// **'Lire, télécharger ou consulter la date d\'acceptation'**
+  String get contratTransporteurLegalSousTitre;
+
+  /// No description provided for @contratAccepteLe.
+  ///
+  /// In fr, this message translates to:
+  /// **'Accepté le {date}'**
+  String contratAccepteLe(String date);
+
+  /// No description provided for @authAccepteContratPrefixe.
+  ///
+  /// In fr, this message translates to:
+  /// **'J\'ai lu et j\'accepte le '**
+  String get authAccepteContratPrefixe;
+
+  /// No description provided for @authAccepteContratLien.
+  ///
+  /// In fr, this message translates to:
+  /// **'contrat de partenariat transporteur'**
+  String get authAccepteContratLien;
+
+  /// No description provided for @authAccepteContratRequis.
+  ///
+  /// In fr, this message translates to:
+  /// **'Vous devez accepter le contrat pour créer un compte transporteur'**
+  String get authAccepteContratRequis;
+
+  /// No description provided for @contratGateTitre.
+  ///
+  /// In fr, this message translates to:
+  /// **'Avant de continuer'**
+  String get contratGateTitre;
+
+  /// No description provided for @contratGateSousTitre.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ce contrat encadre votre partenariat avec AfriFlotte : merci de le lire avant de continuer.'**
+  String get contratGateSousTitre;
+
+  /// No description provided for @contratGateCheckbox.
+  ///
+  /// In fr, this message translates to:
+  /// **'J\'ai lu et j\'accepte ce contrat'**
+  String get contratGateCheckbox;
+
+  /// No description provided for @contratGateAccepter.
+  ///
+  /// In fr, this message translates to:
+  /// **'Accepter et continuer'**
+  String get contratGateAccepter;
+
+  /// No description provided for @contratGateDeconnexion.
+  ///
+  /// In fr, this message translates to:
+  /// **'Se déconnecter'**
+  String get contratGateDeconnexion;
 }
 
 class _AppLocalizationsDelegate

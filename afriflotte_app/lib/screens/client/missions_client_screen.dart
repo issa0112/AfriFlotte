@@ -444,8 +444,21 @@ class _PaiementFooterState extends State<_PaiementFooter> {
         }
 
         final paiement = snapshot.data;
+        // CARTE/MOBILE encore EN_ATTENTE (jamais confirmé par le PSP — ex.
+        // app quittée avant de finaliser) ou en ECHEC : aucun argent n'a
+        // réellement bougé, le client doit pouvoir relancer le paiement
+        // (`creer_paiement_service` remplace ce paiement fantôme plutôt que
+        // de bloquer). Un MANUEL EN_ATTENTE, lui, N'EST PAS "réessayable" :
+        // ce statut signifie "en attente qu'un agent passe encaisser", un
+        // état actif et légitime — le montrer comme statut (pas comme
+        // "Payer" à nouveau) évite de laisser croire que rien ne s'est
+        // passé juste après avoir choisi ce mode.
+        final reessayable =
+            paiement == null ||
+            paiement.statut == 'ECHEC' ||
+            (paiement.statut == 'EN_ATTENTE' && paiement.mode != 'MANUEL');
 
-        if (paiement == null) {
+        if (reessayable) {
           return Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(

@@ -3,20 +3,24 @@ import 'package:flutter/material.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../../models/mission.dart';
 import '../../services/paiement_service.dart';
+import '../legal/contrat_screen.dart';
 import 'paiement_carte_screen.dart';
+import 'paiement_mobile_screen.dart';
 import 'paiement_webview_screen.dart';
 
 const _bleuNuit = Color(0xFF102C5C);
 const _bleuAccent = Color(0xFF2563EB);
 
-/// Choix du mode de paiement d'une mission (carte ou main à main), ouvert
-/// depuis la carte de mission côté client. Crée le `Paiement` côté serveur
-/// via `PaiementService.initierPaiement` puis :
-/// - CARTE avec `checkout_url` (PayDunya, page hébergée) : ouvre
+/// Choix du mode de paiement d'une mission (carte, Mobile Money ou main à
+/// main), ouvert depuis la carte de mission côté client. Crée le `Paiement`
+/// côté serveur via `PaiementService.initierPaiement` puis :
+/// - CARTE/MOBILE avec `checkout_url` (PayDunya, page hébergée) : ouvre
 ///   [PaiementWebViewScreen] — la page reste intégrée à l'app (WebView), pas
 ///   un navigateur externe.
 /// - CARTE sans `checkout_url` (simulateur, formulaire natif) : ouvre
 ///   [PaiementCarteScreen].
+/// - MOBILE sans `checkout_url` (simulateur) : ouvre [PaiementMobileScreen]
+///   (opérateur + numéro à débiter).
 /// - MANUEL : rien de plus à faire ici, un agent AfriFlotte encaissera plus
 ///   tard — l'écran se referme en confirmant que la demande est enregistrée.
 class ChoisirModePaiementScreen extends StatefulWidget {
@@ -50,7 +54,6 @@ class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
     try {
       final donnees = await PaiementService.moyensPaiement(
         token: widget.token,
-        pays: widget.mission.paysDepart,
         montant: widget.mission.prixFinal ?? 0,
       );
       if (mounted) setState(() => _capacites = donnees);
@@ -109,7 +112,28 @@ class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
       }
 
       if (_mode == 'MOBILE') {
-        _erreur('Le lien Mobile Money est indisponible.');
+        // Pas de `checkoutUrl` : passerelle simulateur (aucun compte
+        // PayDunya réel configuré), qui n'a pas de page hébergée à ouvrir —
+        // on demande l'opérateur et le numéro à débiter, comme CARTE demande
+        // les informations de carte (`confirmer_paiement_carte` accepte
+        // aussi MOBILE).
+        final operateurs = (_capacites['mobile_money'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const <String>[];
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => PaiementMobileScreen(
+              token: widget.token,
+              paiementId: paiement.id,
+              montant: widget.mission.prixFinal ?? 0,
+              devise: widget.mission.devise ?? '',
+              trajet: widget.mission.trajet,
+              pays: _capacites['pays']?.toString() ?? widget.mission.paysDepart,
+              operateurs: operateurs,
+            ),
+          ),
+        );
         return;
       }
 
@@ -237,7 +261,19 @@ class _ChoisirModePaiementScreenState extends State<ChoisirModePaiementScreen> {
             selectionne: _mode == 'MANUEL',
             onTap: () => setState(() => _mode = 'MANUEL'),
           ),
-          const SizedBox(height: 26),
+          const SizedBox(height: 14),
+          Center(
+            child: TextButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ContratScreen(type: ContratType.paiement),
+                ),
+              ),
+              icon: const Icon(Icons.description_outlined, size: 18),
+              label: Text(l10n.contratPaiementLien),
+            ),
+          ),
+          const SizedBox(height: 12),
           SizedBox(
             height: 50,
             child: ElevatedButton(

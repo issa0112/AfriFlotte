@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
+from django.utils import timezone
 from .models import *
 from .constants import (
     CAPACITE_PAR_FORMAT_CITERNE,
@@ -126,6 +127,8 @@ class TelephoneTokenObtainPairSerializer(TokenObtainPairSerializer):
         }
 
 
+        from .contrats import CONTRAT_TRANSPORTEUR_VERSION
+
         data["user"] = {
             "id": user.id,
             "username": user.username,
@@ -135,6 +138,9 @@ class TelephoneTokenObtainPairSerializer(TokenObtainPairSerializer):
             "email": user.email,
             "adresse": user.adresse,
             "pays": user.pays,
+            "contrat_transporteur_accepte": (
+                user.contrat_transporteur_version_acceptee == CONTRAT_TRANSPORTEUR_VERSION
+            ),
         }
 
         return data
@@ -145,12 +151,23 @@ class UserSerializer(serializers.ModelSerializer):
         write_only=True
     )
 
-    # `email` est `blank=True` sur le modèle (hérité d'AbstractUser) mais
-    # doit être obligatoire à l'inscription : c'est désormais le seul canal
-    # de réinitialisation de mot de passe (core/views.py:
-    # demander_reinitialisation) — un compte sans email n'aurait aucun moyen
-    # de récupérer l'accès en cas de mot de passe oublié.
-    email = serializers.EmailField(required=True, allow_blank=False)
+    # Optionnel : un compte sans email reste utilisable normalement, seule
+    # la réinitialisation de mot de passe par email (core/views.py:
+    # demander_reinitialisation, seul canal disponible, pas de passerelle
+    # SMS) lui restera fermée. Décision produit — rendu obligatoire une
+    # première fois, puis revenu optionnel pour ne pas bloquer l'inscription
+    # tant que l'envoi d'email n'est pas configuré en production (cf.
+    # EMAIL_HOST_PASSWORD dans settings.py).
+    email = serializers.EmailField(required=False, allow_blank=True)
+
+    # Écriture seule, jamais stocké tel quel : sert uniquement à valider
+    # l'acceptation obligatoire du contrat transporteur ci-dessous, avant que
+    # `create()` ne fige `contrat_transporteur_accepte_le`/`_version_acceptee`.
+    accepte_contrat_transporteur = serializers.BooleanField(
+        required=False,
+        default=False,
+        write_only=True,
+    )
 
     class Meta:
         model = User
@@ -164,6 +181,7 @@ class UserSerializer(serializers.ModelSerializer):
             'nom_entreprise',
             'adresse',
             'pays',
+            'accepte_contrat_transporteur',
         ]
 
     # `/api/register/` (UserCreateView) est un endpoint public, sans
@@ -179,6 +197,17 @@ class UserSerializer(serializers.ModelSerializer):
         if type_compte and type_compte not in self.TYPES_OUVERTS_A_LINSCRIPTION:
             raise serializers.ValidationError({
                 'type_compte': ["Ce type de compte n'est pas disponible à l'inscription."]
+            })
+
+        # Le contrat transporteur (core/contrats.py) est une condition
+        # préalable et obligatoire à l'inscription en tant que transporteur —
+        # pas de compte TRANSPORTEUR sans acceptation explicite, jamais
+        # supposée par défaut.
+        if type_compte == 'TRANSPORTEUR' and not attrs.get('accepte_contrat_transporteur'):
+            raise serializers.ValidationError({
+                'accepte_contrat_transporteur': [
+                    "Vous devez accepter le contrat de partenariat transporteur pour créer ce compte."
+                ]
             })
 
         telephone = attrs.get('telephone')
@@ -200,12 +229,15 @@ class UserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
 
+        type_compte = validated_data.get('type_compte')
+        accepte_contrat = validated_data.pop('accepte_contrat_transporteur', False)
+
         user = User.objects.create_user(
             username=validated_data['username'],
             password=validated_data['password'],
             telephone=validated_data.get('telephone'),
             email=validated_data.get('email'),
-            type_compte=validated_data.get('type_compte'),
+            type_compte=type_compte,
             nom_entreprise=validated_data.get('nom_entreprise'),
             adresse=validated_data.get('adresse'),
             # `.get(..., "ML")` plutôt que `.get(...)` : évite de passer
@@ -214,6 +246,15 @@ class UserSerializer(serializers.ModelSerializer):
             # ferait échouer le .save() sur la contrainte NOT NULL).
             pays=validated_data.get('pays', 'ML'),
         )
+
+        if type_compte == 'TRANSPORTEUR' and accepte_contrat:
+            from .contrats import CONTRAT_TRANSPORTEUR_VERSION
+            user.contrat_transporteur_accepte_le = timezone.now()
+            user.contrat_transporteur_version_acceptee = CONTRAT_TRANSPORTEUR_VERSION
+            user.save(update_fields=[
+                'contrat_transporteur_accepte_le',
+                'contrat_transporteur_version_acceptee',
+            ])
 
         return user
 
@@ -1533,6 +1574,8 @@ class PaiementSerializer(serializers.ModelSerializer):
             'carte_marque',
             'carte_dernier4',
             'carte_expiration',
+            'mobile_operateur',
+            'mobile_numero',
             'litige_en_cours',
             'motif_remboursement',
             'date_encaissement',
@@ -1655,12 +1698,12 @@ class ChangerMotDePasseSerializer(serializers.Serializer):
 
 class DemandeReinitialisationSerializer(serializers.Serializer):
 
-    telephone = serializers.CharField()
+    email = serializers.EmailField()
 
 
 class ConfirmerReinitialisationSerializer(serializers.Serializer):
 
-    telephone = serializers.CharField()
+    email = serializers.EmailField()
 
     code = serializers.CharField(
         min_length=6,

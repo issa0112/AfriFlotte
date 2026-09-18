@@ -92,16 +92,6 @@ void main() {
     });
   });
 
-  group('validerNomTitulaire', () {
-    test('rejette un nom vide', () {
-      expect(validerNomTitulaire('   '), isNotNull);
-    });
-
-    test('accepte un nom renseigné', () {
-      expect(validerNomTitulaire('Issa Traoré'), isNull);
-    });
-  });
-
   group('dernier4', () {
     test('extrait les 4 derniers chiffres', () {
       expect(dernier4('4242424242424242'), '4242');

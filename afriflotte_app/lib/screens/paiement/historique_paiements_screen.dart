@@ -392,6 +392,11 @@ class _PaiementDetailScreenState extends State<PaiementDetailScreen> {
                         '${paiement.carteMarque} •••• ${paiement.carteDernier4}'
                         '${paiement.carteExpiration.isNotEmpty ? ' (${paiement.carteExpiration})' : ''}',
                   ),
+                if (paiement.mobileNumero.isNotEmpty)
+                  _Ligne(
+                    label: 'Mobile Money',
+                    valeur: '${paiement.mobileOperateur} · ${paiement.mobileNumero}',
+                  ),
                 if (paiement.referenceExterne.isNotEmpty)
                   _Ligne(label: 'Référence', valeur: paiement.referenceExterne),
               ],

@@ -10,20 +10,27 @@ from django.shortcuts import render
 from rest_framework import generics
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import api_view
 from rest_framework.decorators import permission_classes
 from .models import *
 from .serializers import *
 from .services import *
 from .constants import devise_pour_pays, moyens_paiement_paydunya
-from .telephone import candidats_suffixe_telephone
+from .telephone import candidats_suffixe_telephone, valider_et_normaliser, TelephoneInvalide
+from .contrats import (
+    CONTRAT_TRANSPORTEUR_VERSION,
+    contrat_paiement,
+    contrat_transporteur,
+)
+from .pdf_contrats import generer_pdf_contrat
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
+from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
@@ -61,6 +68,11 @@ def api_root(request):
                 "client_dashboard": "/api/client/dashboard/",
                 "admin_dashboard": "/api/admin/dashboard/",
                 "notifications": "/api/notifications/",
+                "contrat_paiement": "/api/contrats/paiement/",
+                "contrat_paiement_pdf": "/api/contrats/paiement/pdf/",
+                "contrat_transporteur": "/api/contrats/transporteur/",
+                "contrat_transporteur_pdf": "/api/contrats/transporteur/pdf/",
+                "contrat_transporteur_accepter": "/api/contrats/transporteur/accepter/",
             },
         }
     )
@@ -388,7 +400,11 @@ def initier_paiement(request, mission_id):
         return Response({"message": "Mission introuvable"}, status=404)
 
     mode = request.data.get('mode')
-    capacites = moyens_paiement_paydunya(mission.demande.pays_depart)
+    # Les opérateurs Mobile Money disponibles dépendent du pays du PAYEUR
+    # (c'est son propre compte Mobile Money qui est débité), pas du pays de
+    # départ de la marchandise — un client sénégalais qui paie une mission
+    # au départ du Mali doit voir les opérateurs sénégalais, pas maliens.
+    capacites = moyens_paiement_paydunya(request.user.pays)
     if mode == Paiement.Mode.MOBILE and not capacites['mobile_money']:
         return Response(
             {"message": "Mobile Money n'est pas disponible pour ce pays."},
@@ -424,14 +440,16 @@ def initier_paiement(request, mission_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def moyens_paiement(request):
-    """Capacités de paiement PayDunya à afficher, filtrées par pays
-    d'encaissement. La carte reste disponible dans toute la CEDEAO (PayDunya
-    ne facture qu'en XOF mais `creer_transaction` convertit automatiquement,
-    cf. constants.convertir_vers_xof) ; le Mobile Money n'est affiché que
-    pour les pays où PayDunya documente un support local officiel — pour le
+    """Capacités de paiement PayDunya à afficher, filtrées par le pays du
+    PAYEUR (`request.user.pays`) — c'est son propre compte Mobile Money qui
+    serait débité, pas celui d'un opérateur du pays de départ de la
+    marchandise. La carte reste disponible dans toute la CEDEAO (PayDunya ne
+    facture qu'en XOF mais `creer_transaction` convertit automatiquement, cf.
+    constants.convertir_vers_xof) ; le Mobile Money n'est affiché que pour
+    les pays où PayDunya documente un support local officiel — pour le
     reste, le client voit la carte comme mode de paiement compatible sans
     qu'on invente de méthode non certifiée."""
-    pays = (request.query_params.get('pays') or '').upper()
+    pays = request.user.pays
     reponse = {"pays": pays, **moyens_paiement_paydunya(pays)}
     try:
         montant = request.query_params.get('montant')
@@ -455,9 +473,14 @@ def confirmer_paiement_carte(request, id):
     on interroge la passerelle (`verifier_transaction`, toujours "REUSSI" en
     mode simulateur) puis on route vers `confirmer_paiement_carte_service`.
 
-    Seules marque/4-derniers-chiffres/expiration sont attendus dans le corps
-    — jamais le numéro complet ni le CVV, qui ne doivent jamais atteindre
-    Django (cf. core/gateway_paiement.py)."""
+    Aussi utilisé, avec opérateur+numéro Mobile Money à la place des champs
+    carte, pour confirmer un paiement MOBILE en mode simulateur
+    (`SimulateurGatewayAdapter` ne renvoie jamais de `checkout_url`, donc
+    rien à ouvrir dans un navigateur — Mobile Money n'avait sinon aucun
+    moyen d'être confirmé en développement, cf.
+    `confirmer_paiement_carte_service` qui accepte déjà CARTE et MOBILE).
+    Le numéro complet et le CVV d'une carte, eux, ne doivent jamais
+    atteindre Django (cf. core/gateway_paiement.py)."""
     try:
         paiement = Paiement.objects.select_related('mission').get(id=id)
     except Paiement.DoesNotExist:
@@ -466,24 +489,42 @@ def confirmer_paiement_carte(request, id):
     if paiement.mission.client_id != request.user.id:
         return Response({"message": "Accès non autorisé."}, status=403)
 
-    if paiement.mode != Paiement.Mode.CARTE:
-        return Response({"message": "Ce paiement n'est pas en mode carte."}, status=400)
+    if paiement.mode not in (Paiement.Mode.CARTE, Paiement.Mode.MOBILE):
+        return Response({"message": "Ce paiement n'est pas en mode carte ou mobile."}, status=400)
 
     if paiement.statut != Paiement.Statut.EN_ATTENTE:
         return Response(PaiementSerializer(paiement).data, status=200)
+
+    if paiement.mode == Paiement.Mode.MOBILE:
+        # Revalidé côté serveur plutôt que de faire confiance à la saisie
+        # Flutter (déjà validée côté client, mais rejouable telle quelle par
+        # n'importe quel appelant de cette API) : mêmes règles que
+        # l'inscription/connexion (`valider_et_normaliser`), et l'opérateur
+        # doit être un de ceux réellement documentés pour le pays du payeur.
+        operateurs_valides = moyens_paiement_paydunya(request.user.pays)['mobile_money']
+        operateur = str(request.data.get('mobile_operateur', ''))[:40]
+        if operateur not in operateurs_valides:
+            return Response({"message": "Opérateur Mobile Money invalide."}, status=400)
+
+        try:
+            numero = valider_et_normaliser(request.user.pays, str(request.data.get('mobile_numero', '')))
+        except TelephoneInvalide as exc:
+            return Response({"message": str(exc)}, status=400)
+
+        infos = {"operateur": operateur, "numero": numero}
+    else:
+        infos = {
+            "marque": str(request.data.get('carte_marque', ''))[:20],
+            "dernier4": str(request.data.get('carte_dernier4', ''))[:4],
+            "expiration": str(request.data.get('carte_expiration', ''))[:5],
+        }
 
     statut_psp = get_gateway().verifier_transaction(paiement.reference_externe)
 
     if statut_psp == "EN_ATTENTE":
         return Response(PaiementSerializer(paiement).data, status=202)
 
-    carte_info = {
-        "marque": str(request.data.get('carte_marque', ''))[:20],
-        "dernier4": str(request.data.get('carte_dernier4', ''))[:4],
-        "expiration": str(request.data.get('carte_expiration', ''))[:5],
-    }
-
-    paiement = confirmer_paiement_carte_service(paiement.reference_externe, statut_psp, carte_info)
+    paiement = confirmer_paiement_carte_service(paiement.reference_externe, statut_psp, infos)
 
     return Response(PaiementSerializer(paiement).data)
 
@@ -1429,6 +1470,13 @@ def profil(request):
             request.build_absolute_uri(user.photo_profil.url)
             if user.photo_profil else None
         ),
+        # Portée volontairement à tous les types de compte (pas seulement
+        # TRANSPORTEUR) : `naviguerApresConnexion` côté Flutter route déjà
+        # selon `type_compte`, un booléen toujours présent lui évite un accès
+        # à une clé absente pour les autres types.
+        "contrat_transporteur_accepte": (
+            user.contrat_transporteur_version_acceptee == CONTRAT_TRANSPORTEUR_VERSION
+        ),
 
     })
 
@@ -1459,46 +1507,96 @@ def changer_mot_de_passe(request):
     )
 
 
+# ==========================
+# CONTRATS (paiement / transporteur)
+# ==========================
+#
+# Contenu public (AllowAny) : ce sont des documents légaux consultables par
+# quiconque, y compris un futur transporteur qui n'a pas encore de compte au
+# moment de lire le contrat à l'inscription (cf. AuthScreen côté Flutter).
+# Seule l'acceptation (POST) exige un compte transporteur authentifié.
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def contrat_paiement_view(request):
+    return Response(contrat_paiement())
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def contrat_paiement_pdf_view(request):
+    pdf = generer_pdf_contrat(contrat_paiement())
+    reponse = HttpResponse(pdf, content_type='application/pdf')
+    reponse['Content-Disposition'] = 'inline; filename="afriflotte-conditions-paiement.pdf"'
+    return reponse
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def contrat_transporteur_view(request):
+    return Response(contrat_transporteur())
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def contrat_transporteur_pdf_view(request):
+    pdf = generer_pdf_contrat(contrat_transporteur())
+    reponse = HttpResponse(pdf, content_type='application/pdf')
+    reponse['Content-Disposition'] = 'inline; filename="afriflotte-contrat-transporteur.pdf"'
+    return reponse
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def accepter_contrat_transporteur_view(request):
+    user = request.user
+    if user.type_compte != 'TRANSPORTEUR':
+        return Response(
+            {"detail": "Seul un compte transporteur peut accepter ce contrat."},
+            status=403,
+        )
+
+    user.contrat_transporteur_accepte_le = timezone.now()
+    user.contrat_transporteur_version_acceptee = CONTRAT_TRANSPORTEUR_VERSION
+    user.save(update_fields=[
+        'contrat_transporteur_accepte_le',
+        'contrat_transporteur_version_acceptee',
+    ])
+
+    return Response({
+        "message": "Contrat accepté.",
+        "contrat_transporteur_accepte": True,
+        "contrat_transporteur_accepte_le": user.contrat_transporteur_accepte_le,
+    })
+
+
 @api_view(['POST'])
 def demander_reinitialisation(request):
     """Étape 1 du "mot de passe oublié" : génère un code à 6 chiffres valable
-    15 minutes et l'envoie par EMAIL à l'adresse enregistrée sur le compte
-    (`envoyer_email_reinitialisation`) — pas de passerelle SMS disponible.
-    Pas d'authentification requise — c'est précisément le cas où
-    l'utilisateur ne peut pas se connecter.
+    15 minutes et l'envoie par EMAIL à l'adresse fournie — c'est aussi elle
+    qui identifie le compte, l'email étant le seul canal de récupération
+    disponible (pas de passerelle SMS). Pas d'authentification requise —
+    c'est précisément le cas où l'utilisateur ne peut pas se connecter.
 
     Le code n'apparaît JAMAIS dans la réponse API : une version antérieure
     le renvoyait directement ici (mode démo, sans envoi réel), ce qui
-    permettait à quiconque connaissant un numéro de téléphone de
-    réinitialiser le mot de passe associé sans jamais y avoir accès."""
+    permettait à quiconque connaissant l'email d'un compte de réinitialiser
+    le mot de passe associé sans jamais y avoir accès."""
 
     serializer = DemandeReinitialisationSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
-    telephone = serializer.validated_data['telephone']
+    email = serializer.validated_data['email']
 
-    # Comme pour la connexion, le champ ne contient pas l'indicatif : on
-    # cherche par suffixe. Pas de deuxième facteur disponible à cette étape
-    # pour désambiguïser une éventuelle collision entre deux pays (cas rare,
-    # accepté comme limite) — `.first()` sur le seul candidat le plus probable.
-    q = candidats_suffixe_telephone(telephone)
-    user = User.objects.filter(q).first() if q is not None else None
+    # `email` n'est pas déclaré unique sur User (aucun compte n'en a besoin
+    # aujourd'hui) : `.first()` sur une éventuelle collision, comme pour le
+    # suffixe téléphone à la connexion — seul CE compte reçoit le code, les
+    # autres candidats ne sont jamais touchés.
+    user = User.objects.filter(email__iexact=email).first()
     if user is None:
         return Response(
-            {"detail": "Aucun compte associé à ce numéro."},
+            {"detail": "Aucun compte associé à cette adresse email."},
             status=404,
-        )
-
-    if not user.email:
-        return Response(
-            {
-                "detail": (
-                    "Aucune adresse email n'est enregistrée sur ce compte. "
-                    "Contactez le support AfriFlotte pour réinitialiser votre "
-                    "mot de passe."
-                )
-            },
-            status=400,
         )
 
     code = ''.join(random.choices(string.digits, k=6))
@@ -1528,17 +1626,16 @@ def confirmer_reinitialisation(request):
     serializer.is_valid(raise_exception=True)
     data = serializer.validated_data
 
-    q = candidats_suffixe_telephone(data['telephone'])
-    candidats = list(User.objects.filter(q)) if q is not None else []
+    candidats = list(User.objects.filter(email__iexact=data['email']))
     if not candidats:
         return Response(
-            {"detail": "Aucun compte associé à ce numéro."},
+            {"detail": "Aucun compte associé à cette adresse email."},
             status=404,
         )
 
-    # En cas de collision de suffixe (numéro local identique par coïncidence
-    # dans deux pays, cas rare), le code à usage unique désambiguïse : on
-    # retient le candidat dont le code correspond plutôt que le premier venu.
+    # `email` n'est pas déclaré unique sur User : en cas de collision (rare),
+    # le code à usage unique désambiguïse — on retient le candidat dont le
+    # code correspond plutôt que le premier venu.
     user = next(
         (c for c in candidats if c.code_reinitialisation == data['code']),
         candidats[0],

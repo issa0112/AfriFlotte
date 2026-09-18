@@ -11,6 +11,7 @@ import '../../utils/telephone.dart';
 import '../../widgets/language_switcher.dart';
 import '../../widgets/pays_dropdown.dart';
 import '../chauffeur/chauffeur_dashboard_screen.dart';
+import '../legal/contrat_screen.dart';
 
 import 'auth_theme.dart';
 import 'mot_de_passe_oublie_screen.dart';
@@ -60,6 +61,8 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
   bool _regPasswordVisible = false;
   bool _confirmVisible = false;
   bool _registerLoading = false;
+  bool _accepteContratTransporteur = false;
+  bool _contratTransporteurErreur = false;
 
   /// Numéro complet envoyé au backend, normalisé selon le plan de
   /// numérotation du pays choisi (indicatif + numéro national, zéro initial
@@ -166,6 +169,14 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
 
       if (chauffeurResult["success"] == true) {
         final data = chauffeurResult["data"] ?? {};
+
+        await StorageService.saveChauffeurSession(
+          telephone: _telephoneController.text.trim(),
+          codeAcces: _passwordController.text,
+        );
+
+        if (!mounted) return;
+
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (_) => ChauffeurDashboardScreen(
@@ -205,6 +216,15 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
   Future<void> _creerCompte() async {
     if (!(_registerFormKey.currentState?.validate() ?? false)) return;
 
+    // Case à cocher hors du `Form` (elle n'a pas de `validator`, juste un
+    // état affiché conditionnellement) : vérifiée à part, avant tout appel
+    // réseau — le serveur la refuse de toute façon (`UserSerializer.validate`),
+    // mais échouer côté client évite l'aller-retour pour une erreur évitable.
+    final contratRequisMaisManquant =
+        _typeCompte == 'TRANSPORTEUR' && !_accepteContratTransporteur;
+    setState(() => _contratTransporteurErreur = contratRequisMaisManquant);
+    if (contratRequisMaisManquant) return;
+
     final l10n = AppLocalizations.of(context);
     setState(() => _registerLoading = true);
 
@@ -218,6 +238,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
         nomEntreprise: _nomEntrepriseController.text,
         email: _emailController.text,
         pays: _paysCompte,
+        accepteContratTransporteur: _accepteContratTransporteur,
       );
 
       if (!mounted) return;
@@ -637,10 +658,14 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
             style: authBody(color: authTextDark, weight: FontWeight.w500),
-            decoration: authInputDecoration(l10n.authEmailLabel, Icons.mail_outline)
+            decoration: authInputDecoration(l10n.authEmailLabelInscription, Icons.mail_outline)
                 .copyWith(helperText: l10n.authEmailHelper),
+            // Optionnel : un compte sans email reste utilisable, seule la
+            // réinitialisation de mot de passe par email lui sera fermée
+            // (pas de canal SMS disponible). On ne valide le format que si
+            // quelque chose a été saisi.
             validator: (value) {
-              if (value == null || value.trim().isEmpty) return l10n.authEmailRequired;
+              if (value == null || value.trim().isEmpty) return null;
               return _emailValide.hasMatch(value.trim()) ? null : l10n.authEmailInvalid;
             },
           ),
@@ -688,6 +713,68 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             validator: (value) =>
                 value != _regPasswordController.text ? l10n.authPasswordMismatch : null,
           ),
+          if (_typeCompte == 'TRANSPORTEUR') ...[
+            const SizedBox(height: 18),
+            InkWell(
+              onTap: () => setState(() {
+                _accepteContratTransporteur = !_accepteContratTransporteur;
+                if (_accepteContratTransporteur) _contratTransporteurErreur = false;
+              }),
+              borderRadius: BorderRadius.circular(10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Checkbox(
+                    value: _accepteContratTransporteur,
+                    onChanged: (v) => setState(() {
+                      _accepteContratTransporteur = v ?? false;
+                      if (_accepteContratTransporteur) _contratTransporteurErreur = false;
+                    }),
+                    activeColor: authMintDim,
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            l10n.authAccepteContratPrefixe,
+                            style: authBody(color: authTextDark, size: 13),
+                          ),
+                          GestureDetector(
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const ContratScreen(
+                                  type: ContratType.transporteur,
+                                ),
+                              ),
+                            ),
+                            child: Text(
+                              l10n.authAccepteContratLien,
+                              style: authBody(
+                                color: authMintDim,
+                                weight: FontWeight.w700,
+                                size: 13,
+                              ).copyWith(decoration: TextDecoration.underline),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_contratTransporteurErreur)
+              Padding(
+                padding: const EdgeInsets.only(left: 12, top: 2),
+                child: Text(
+                  l10n.authAccepteContratRequis,
+                  style: authBody(color: Colors.redAccent, size: 12),
+                ),
+              ),
+          ],
           const SizedBox(height: 26),
           AuthPrimaryButton(
             label: l10n.authSignupButton,

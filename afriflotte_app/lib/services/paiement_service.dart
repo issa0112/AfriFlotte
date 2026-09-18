@@ -70,16 +70,18 @@ class PaiementService {
     }
   }
 
-  /// Capacités et prévision de commission, toutes deux calculées côté serveur.
+  /// Capacités et prévision de commission, toutes deux calculées côté
+  /// serveur. Le pays retenu pour les opérateurs Mobile Money disponibles
+  /// est celui du PAYEUR authentifié (`request.user.pays` côté Django) —
+  /// c'est son propre compte Mobile Money qui serait débité, pas un
+  /// opérateur du pays de départ de la marchandise — donc rien à envoyer
+  /// ici, seul `montant` sert à prévisualiser la commission.
   static Future<Map<String, dynamic>> moyensPaiement({
     required String token,
-    required String pays,
     required num montant,
   }) async {
     final response = await AuthenticatedHttp.get(
-      Uri.parse(
-        '${ApiService.baseUrl}/paiements/moyens/?pays=$pays&montant=$montant',
-      ),
+      Uri.parse('${ApiService.baseUrl}/paiements/moyens/?montant=$montant'),
       headers: _headers(token),
     ).timeout(const Duration(seconds: 15));
     if (response.statusCode == 200) return _decodeMap(response.body);
@@ -107,6 +109,43 @@ class PaiementService {
           'carte_marque': marque,
           'carte_dernier4': dernier4,
           'carte_expiration': expiration,
+        }),
+      ).timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200 || response.statusCode == 202) {
+        return Paiement.fromJson(jsonDecode(response.body));
+      }
+
+      throw Exception(_messageErreur(response.body));
+    } on TimeoutException {
+      throw Exception('Délai dépassé. Vérifiez la connexion réseau.');
+    } on SocketException {
+      throw Exception(
+        'Serveur injoignable. Vérifiez votre connexion et que Django tourne.',
+      );
+    }
+  }
+
+  /// Même endpoint que [confirmerPaiementCarte] (`core/views.py` route les
+  /// deux via `paiement.mode`), avec l'opérateur et le numéro Mobile Money à
+  /// la place des champs carte. Revalidés côté serveur (format du numéro
+  /// selon le pays du payeur, opérateur documenté) — ceci n'est qu'un
+  /// confort de saisie côté client.
+  static Future<Paiement> confirmerPaiementMobile({
+    required String token,
+    required int paiementId,
+    required String operateur,
+    required String numero,
+  }) async {
+    try {
+      final response = await AuthenticatedHttp.post(
+        Uri.parse(
+          '${ApiService.baseUrl}/paiements/$paiementId/confirmer-carte/',
+        ),
+        headers: _headers(token),
+        body: jsonEncode({
+          'mobile_operateur': operateur,
+          'mobile_numero': numero,
         }),
       ).timeout(const Duration(seconds: 20));
 

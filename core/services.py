@@ -653,15 +653,41 @@ def calculer_commission(montant_total, taux=None):
 def creer_paiement_service(mission, mode, user):
     """Crée le Paiement (EN_ATTENTE) d'une mission. Une seule fois par
     mission (OneToOne côté modèle) — seul le client de la mission peut
-    choisir comment il paie."""
+    choisir comment il paie.
+
+    Un paiement CARTE/MOBILE resté EN_ATTENTE (jamais confirmé par le PSP —
+    ex. app quittée avant de finaliser) ou en ECHEC (transaction refusée) est
+    remplacé plutôt que de bloquer : aucun argent n'a réellement bougé pour
+    la mission à ce stade, donc rien n'empêche le client de repartir sur un
+    mode de paiement propre. Avant ce correctif, quitter l'app avant de
+    finaliser une carte laissait un Paiement fantôme qui bloquait ensuite
+    toute nouvelle tentative avec "Cette mission a déjà un paiement
+    associé" — alors qu'aucun paiement n'avait eu lieu.
+
+    Un paiement MANUEL EN_ATTENTE, en revanche, N'EST PAS remplacé : ce
+    statut y signifie "en attente qu'un agent AfriFlotte passe encaisser",
+    un état actif et légitime tant que ce n'est pas un abandon — contrairement
+    à CARTE/MOBILE, rien ne permet de distinguer ici un abandon d'une
+    collecte en cours, donc on ne le décide pas silencieusement à la place
+    du client."""
     if mission.client_id != user.id:
         raise PermissionError("Vous n'avez pas le droit de payer cette mission.")
 
     if mode not in Paiement.Mode.values:
         raise ValueError("Mode de paiement invalide.")
 
-    if Paiement.objects.filter(mission=mission).exists():
-        raise ValueError("Cette mission a déjà un paiement associé.")
+    paiement_existant = Paiement.objects.filter(mission=mission).first()
+    if paiement_existant is not None:
+        remplacable = (
+            paiement_existant.statut == Paiement.Statut.ECHEC
+            or (
+                paiement_existant.statut == Paiement.Statut.EN_ATTENTE
+                and paiement_existant.mode != Paiement.Mode.MANUEL
+            )
+        )
+        if not remplacable:
+            raise ValueError("Cette mission a déjà un paiement associé.")
+        paiement_existant.delete()
 
     if mission.prix_final is None:
         raise ValueError("Cette mission n'a pas de prix à payer.")
@@ -709,19 +735,21 @@ def initier_paiement_carte_service(paiement):
 
 
 @transaction.atomic
-def confirmer_paiement_carte_service(reference, statut_psp, carte_info=None):
+def confirmer_paiement_carte_service(reference, statut_psp, infos_moyen_paiement=None):
     """Appelé par le webhook PSP ou par `confirmer_paiement_carte`
     (`core/views.py`, formulaire intégré côté Flutter) avec `statut_psp` =
     "REUSSI"/"ECHEC"/"EN_ATTENTE" (les 3 valeurs possibles de
-    `GatewayPaiement.verifier_transaction`). Un paiement carte confirmé passe
-    directement ENCAISSE -> SECURISE : le PSP a déjà vérifié la transaction,
-    contrairement au mode manuel qui exige une validation admin séparée (cf.
-    valider_paiement_manuel_service).
+    `GatewayPaiement.verifier_transaction`). Un paiement carte/mobile confirmé
+    passe directement ENCAISSE -> SECURISE : le PSP a déjà vérifié la
+    transaction, contrairement au mode manuel qui exige une validation admin
+    séparée (cf. valider_paiement_manuel_service).
 
-    `carte_info` (optionnel) : `{"marque", "dernier4", "expiration"}` —
-    métadonnées d'affichage seulement, enregistrées uniquement si la
-    transaction réussit. Le webhook PSP n'a pas ces informations (c'est
-    l'app qui les détient), d'où le défaut `None`."""
+    `infos_moyen_paiement` (optionnel) : `{"marque", "dernier4", "expiration"}`
+    pour CARTE ou `{"operateur", "numero"}` pour MOBILE — métadonnées
+    d'affichage seulement (cf. `mode` du paiement pour savoir lesquelles
+    appliquer), enregistrées uniquement si la transaction réussit. Le webhook
+    PSP n'a pas ces informations (c'est l'app qui les détient), d'où le
+    défaut `None`."""
     try:
         paiement = Paiement.objects.select_related(
             'mission__client', 'mission__transporteur', 'mission__demande'
@@ -760,10 +788,14 @@ def confirmer_paiement_carte_service(reference, statut_psp, carte_info=None):
     paiement.date_securisation = maintenant
     champs_modifies = ["statut", "date_encaissement", "date_securisation", "updated_at"]
 
-    if carte_info:
-        paiement.carte_marque = carte_info.get("marque", "") or ""
-        paiement.carte_dernier4 = carte_info.get("dernier4", "") or ""
-        paiement.carte_expiration = carte_info.get("expiration", "") or ""
+    if infos_moyen_paiement and paiement.mode == Paiement.Mode.MOBILE:
+        paiement.mobile_operateur = infos_moyen_paiement.get("operateur", "") or ""
+        paiement.mobile_numero = infos_moyen_paiement.get("numero", "") or ""
+        champs_modifies += ["mobile_operateur", "mobile_numero"]
+    elif infos_moyen_paiement:
+        paiement.carte_marque = infos_moyen_paiement.get("marque", "") or ""
+        paiement.carte_dernier4 = infos_moyen_paiement.get("dernier4", "") or ""
+        paiement.carte_expiration = infos_moyen_paiement.get("expiration", "") or ""
         champs_modifies += ["carte_marque", "carte_dernier4", "carte_expiration"]
 
     paiement.save(update_fields=champs_modifies)

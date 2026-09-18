@@ -34,7 +34,8 @@
   "authAccountTypeEntreprise": "Entreprise",
   "authCompanyNameLabel": "Nom de l'entreprise / société (optionnel)",
   "authEmailLabel": "Email",
-  "authEmailHelper": "Sert à réinitialiser votre mot de passe en cas d'oubli",
+  "authEmailLabelInscription": "Email (optionnel)",
+  "authEmailHelper": "Recommandé : sert à réinitialiser votre mot de passe en cas d'oubli",
   "authEmailRequired": "L'email est obligatoire",
   "authEmailInvalid": "Adresse email invalide",
   "authPasswordMinLength": "Au moins 6 caractères",
@@ -55,7 +56,7 @@
   "forgotStep1Of2": "ÉTAPE 1/2",
   "forgotStep2Of2": "ÉTAPE 2/2",
   "forgotTitle": "Mot de passe oublié",
-  "forgotSubtitle": "Entrez le numéro associé à votre compte : nous vous enverrons un code de réinitialisation par email.",
+  "forgotSubtitle": "Entrez l'adresse email associée à votre compte : nous vous enverrons un code de réinitialisation.",
   "forgotSendCodeButton": "Envoyer le code",
   "forgotVerificationTitle": "Vérification",
   "forgotVerificationSubtitle": "Saisissez le code reçu par email et choisissez un nouveau mot de passe.",
@@ -590,11 +591,13 @@
   "paiementBouton": "Payer",
   "paiementCarteMontantAPayer": "Montant à payer",
   "paiementCarteNumeroLabel": "Numéro de carte",
-  "paiementCarteNomLabel": "Nom du titulaire",
   "paiementCarteExpirationLabel": "MM/AA",
   "paiementCarteCvvLabel": "CVV",
   "paiementCarteSecuriteNote": "Paiement sécurisé. Votre numéro de carte et votre CVV ne sont jamais enregistrés.",
   "paiementCarteTraitementEnCours": "Traitement du paiement…",
+  "paiementMobileOperateurLabel": "Opérateur Mobile Money",
+  "paiementMobileNumeroLabel": "Numéro Mobile Money",
+  "paiementMobileNote": "Vous recevrez une demande de confirmation du paiement sur ce numéro.",
   "paiementAnnuleParClient": "Paiement annulé",
   "paiementVerificationDelaiDepasse": "Le paiement met plus de temps que prévu à se confirmer. Vérifiez plus tard dans \"Mes paiements\".",
   "paiementHistoriqueTitle": "Mes paiements",
@@ -631,6 +634,7 @@
   "agentAjouterPreuve": "Ajouter une preuve (photo)",
   "agentPreuveAjoutee": "Photo ajoutée",
   "agentEncaissementConfirme": "Encaissement enregistré, en attente de validation admin.",
+  "paiementMobileConfirme": "Paiement Mobile Money confirmé.",
 
   "adminPaiementsTitle": "Paiements à traiter",
   "adminPaiementsEmpty": "Rien à traiter pour l'instant",
@@ -662,5 +666,32 @@
   "adminDemandesTitle": "Demandes",
   "adminDemandesFilterOuverte": "Ouvertes",
   "adminDemandesEmpty": "Aucune demande pour l'instant",
-  "missionsClientFilterAnnulee": "Annulées"
+  "missionsClientFilterAnnulee": "Annulées",
+
+  "contratChargementErreur": "Impossible de charger ce contrat.",
+  "contratVersionLabel": "Version du {date}",
+  "@contratVersionLabel": {
+    "placeholders": { "date": { "type": "String" } }
+  },
+  "contratTelechargerPdf": "Télécharger en PDF",
+  "contratPaiementTitre": "Conditions de paiement",
+  "contratPaiementLien": "Consulter les conditions de paiement",
+  "contratTransporteurTitre": "Contrat de partenariat transporteur",
+  "contratTransporteurLireLien": "Lire le contrat de partenariat transporteur",
+  "contratTransporteurLegal": "Contrat transporteur",
+  "contratTransporteurLegalSousTitre": "Lire, télécharger ou consulter la date d'acceptation",
+  "contratAccepteLe": "Accepté le {date}",
+  "@contratAccepteLe": {
+    "placeholders": { "date": { "type": "String" } }
+  },
+
+  "authAccepteContratPrefixe": "J'ai lu et j'accepte le ",
+  "authAccepteContratLien": "contrat de partenariat transporteur",
+  "authAccepteContratRequis": "Vous devez accepter le contrat pour créer un compte transporteur",
+
+  "contratGateTitre": "Avant de continuer",
+  "contratGateSousTitre": "Ce contrat encadre votre partenariat avec AfriFlotte : merci de le lire avant de continuer.",
+  "contratGateCheckbox": "J'ai lu et j'accepte ce contrat",
+  "contratGateAccepter": "Accepter et continuer",
+  "contratGateDeconnexion": "Se déconnecter"
 }

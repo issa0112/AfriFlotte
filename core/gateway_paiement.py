@@ -151,12 +151,14 @@ class PayDunyaGatewayAdapter(GatewayPaiement):
             },
             "custom_data": {"paiement_id": paiement.id},
         }
-        # Restreint la page hébergée aux moyens du pays du client (carte +
-        # Mobile Money local confirmé) — sans ça PayDunya affiche par défaut
+        # Restreint la page hébergée aux moyens du pays du PAYEUR (carte +
+        # Mobile Money local confirmé) — c'est son propre compte Mobile
+        # Money qui est débité, pas un opérateur du pays de départ de la
+        # marchandise. Sans cette restriction, PayDunya affiche par défaut
         # tout ce qui est autorisé sur le compte marchand, ex. Wave Sénégal
         # à un client ghanéen. Absent (None) pour un pays inconnu : on laisse
         # alors PayDunya décider plutôt que d'envoyer une restriction fausse.
-        canaux = canaux_paydunya_pour_pays(paiement.mission.demande.pays_depart)
+        canaux = canaux_paydunya_pour_pays(paiement.mission.client.pays)
         if canaux:
             corps["invoice"]["channels"] = list(canaux)
 

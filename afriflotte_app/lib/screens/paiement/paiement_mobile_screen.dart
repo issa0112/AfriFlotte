@@ -1,65 +1,64 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import '../../constants/pays_cedeao.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../../services/paiement_service.dart';
-import '../../utils/carte_bancaire.dart';
+import '../../utils/telephone.dart';
 
 const _bleuNuit = Color(0xFF102C5C);
 const _bleuAccent = Color(0xFF2563EB);
 
-/// Formulaire de carte bancaire intégré à l'app (numéro, titulaire,
-/// expiration, CVV) — plus de page externe à ouvrir dans un navigateur.
+/// Formulaire Mobile Money intégré à l'app (opérateur + numéro à débiter) —
+/// pendant de `PaiementCarteScreen` pour le mode MOBILE quand la passerelle
+/// active n'a pas de page hébergée à ouvrir (simulateur ; PayDunya, lui,
+/// fournit un `checkout_url` géré ailleurs via une WebView).
 ///
-/// Le numéro complet et le CVV ne quittent jamais l'appareil : ils ne
-/// servent qu'à la validation locale (Luhn, expiration, longueur du CVV,
-/// `lib/utils/carte_bancaire.dart`). Seuls la marque, les 4 derniers
-/// chiffres et l'expiration partent vers
-/// `PaiementService.confirmerPaiementCarte`, qui appelle la passerelle
-/// (simulateur par défaut, réussite immédiate — cf.
-/// `core/gateway_paiement.py`) de façon synchrone : pas de minuteur de
-/// polling, le résultat s'affiche dès la réponse du serveur.
-class PaiementCarteScreen extends StatefulWidget {
+/// Le numéro est revalidé côté serveur (`valider_et_normaliser` selon
+/// [pays], même règles qu'à l'inscription) et l'opérateur doit être l'un de
+/// [operateurs] — la validation ici n'est qu'un confort de saisie.
+class PaiementMobileScreen extends StatefulWidget {
   final String token;
   final int paiementId;
   final double montant;
   final String devise;
   final String trajet;
+  final String pays;
+  final List<String> operateurs;
 
-  const PaiementCarteScreen({
+  const PaiementMobileScreen({
     super.key,
     required this.token,
     required this.paiementId,
     required this.montant,
     required this.devise,
     required this.trajet,
+    required this.pays,
+    required this.operateurs,
   });
 
   @override
-  State<PaiementCarteScreen> createState() => _PaiementCarteScreenState();
+  State<PaiementMobileScreen> createState() => _PaiementMobileScreenState();
 }
 
-class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
+class _PaiementMobileScreenState extends State<PaiementMobileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _numeroController = TextEditingController();
-  final _expirationController = TextEditingController();
-  final _cvvController = TextEditingController();
 
-  MarqueCarte _marque = MarqueCarte.autre;
+  late String _operateur;
   bool _envoi = false;
   bool _succes = false;
   String? _erreur;
 
   @override
-  void dispose() {
-    _numeroController.dispose();
-    _expirationController.dispose();
-    _cvvController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _operateur = widget.operateurs.isNotEmpty ? widget.operateurs.first : '';
   }
 
-  void _surChangementNumero(String valeur) {
-    setState(() => _marque = detecterMarque(valeur));
+  @override
+  void dispose() {
+    _numeroController.dispose();
+    super.dispose();
   }
 
   Future<void> _payer() async {
@@ -71,20 +70,12 @@ class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
       _erreur = null;
     });
 
-    // Les seules données qui partent vers le serveur : marque, 4 derniers
-    // chiffres, expiration. `_numeroController`/`_cvvController` ne sont lus
-    // qu'ici, localement, jamais transmis.
-    final marque = codeMarque(_marque);
-    final dernierChiffres = dernier4(_numeroController.text);
-    final expiration = _expirationController.text.trim();
-
     try {
-      final paiement = await PaiementService.confirmerPaiementCarte(
+      final paiement = await PaiementService.confirmerPaiementMobile(
         token: widget.token,
         paiementId: widget.paiementId,
-        marque: marque,
-        dernier4: dernierChiffres,
-        expiration: expiration,
+        operateur: _operateur,
+        numero: _numeroController.text.trim(),
       );
 
       if (!mounted) return;
@@ -120,7 +111,7 @@ class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
-              child: _succes ? _carteSucces(l10n) : _carteFormulaire(l10n),
+              child: _succes ? _succesVue(l10n) : _formulaire(l10n),
             ),
           ),
         ),
@@ -128,7 +119,7 @@ class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
     );
   }
 
-  Widget _carteSucces(AppLocalizations l10n) {
+  Widget _succesVue(AppLocalizations l10n) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -149,7 +140,7 @@ class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
     );
   }
 
-  Widget _carteFormulaire(AppLocalizations l10n) {
+  Widget _formulaire(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -185,75 +176,49 @@ class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            TextFormField(
-              controller: _numeroController,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(19),
-              ],
-              onChanged: _surChangementNumero,
+            DropdownButtonFormField<String>(
+              initialValue: _operateur.isEmpty ? null : _operateur,
+              isExpanded: true,
               decoration: InputDecoration(
-                labelText: l10n.paiementCarteNumeroLabel,
+                labelText: l10n.paiementMobileOperateurLabel,
                 border: const OutlineInputBorder(),
-                suffixIcon: _marque == MarqueCarte.autre
-                    ? const Icon(Icons.credit_card_rounded)
-                    : Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(
-                          libelleMarque(_marque),
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-                        ),
-                      ),
+                prefixIcon: const Icon(Icons.phone_android_rounded),
               ),
-              validator: (valeur) => validerNumeroCarte(valeur ?? ''),
+              items: widget.operateurs
+                  .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+                  .toList(),
+              onChanged: (valeur) => setState(() => _operateur = valeur ?? ''),
+              validator: (valeur) =>
+                  valeur == null || valeur.isEmpty ? l10n.commonRequiredField : null,
             ),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _expirationController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [_FormatteurExpiration()],
-                    decoration: InputDecoration(
-                      labelText: l10n.paiementCarteExpirationLabel,
-                      border: const OutlineInputBorder(),
-                    ),
-                    validator: (valeur) => validerExpiration(valeur ?? ''),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: TextFormField(
-                    controller: _cvvController,
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(longueurCvvAttendue(_marque)),
-                    ],
-                    decoration: InputDecoration(
-                      labelText: l10n.paiementCarteCvvLabel,
-                      border: const OutlineInputBorder(),
-                    ),
-                    validator: (valeur) => validerCvv(valeur ?? '', _marque),
-                  ),
-                ),
-              ],
+            TextFormField(
+              controller: _numeroController,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: l10n.paiementMobileNumeroLabel,
+                border: const OutlineInputBorder(),
+                prefixText: '${indicatifParPays(widget.pays) ?? ''} ',
+              ),
+              validator: (valeur) {
+                if (valeur == null || valeur.trim().isEmpty) {
+                  return l10n.commonRequiredField;
+                }
+                return validerNumeroLocal(widget.pays, valeur.trim());
+              },
             ),
             const SizedBox(height: 14),
             Row(
               children: [
                 Icon(
-                  Icons.lock_outline_rounded,
+                  Icons.info_outline_rounded,
                   size: 14,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    l10n.paiementCarteSecuriteNote,
+                    l10n.paiementMobileNote,
                     style: TextStyle(
                       fontSize: 11.5,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -299,27 +264,6 @@ class _PaiementCarteScreenState extends State<PaiementCarteScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Formate la saisie de l'expiration en "MM/AA" au fil de la frappe (insère
-/// automatiquement le "/" après les deux premiers chiffres).
-class _FormatteurExpiration extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(TextEditingValue ancien, TextEditingValue nouveau) {
-    final tousLesChiffres = nouveau.text.replaceAll(RegExp(r'\D'), '');
-    final chiffres = tousLesChiffres.length > 4
-        ? tousLesChiffres.substring(0, 4)
-        : tousLesChiffres;
-
-    final formate = chiffres.length > 2
-        ? '${chiffres.substring(0, 2)}/${chiffres.substring(2)}'
-        : chiffres;
-
-    return TextEditingValue(
-      text: formate,
-      selection: TextSelection.collapsed(offset: formate.length),
     );
   }
 }

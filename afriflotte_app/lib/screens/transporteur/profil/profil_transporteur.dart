@@ -10,6 +10,7 @@ import '../../../widgets/avatar_picker.dart';
 import '../../../widgets/language_switcher.dart';
 import '../../../widgets/theme_switcher.dart';
 import '../../auth/auth_screen.dart';
+import '../../legal/contrat_screen.dart';
 import 'modifier_profil_screen.dart';
 import 'securite_compte_screen.dart';
 
@@ -206,6 +207,18 @@ class ProfilTransporteur extends StatelessWidget {
                     subtitle: l10n.profilTLanguageSubtitle,
                     color: Colors.teal,
                     onTap: () => _ouvrirSelecteurLangue(context),
+                  ),
+                  _ActionTile(
+                    icon: Icons.description_outlined,
+                    title: l10n.contratTransporteurLegal,
+                    subtitle: l10n.contratTransporteurLegalSousTitre,
+                    color: Colors.indigo,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            const ContratScreen(type: ContratType.transporteur),
+                      ),
+                    ),
                   ),
                   _ActionTile(
                     icon: Icons.logout_rounded,

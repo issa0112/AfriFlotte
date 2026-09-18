@@ -469,6 +469,7 @@ class PaysUserChauffeurTests(TestCase):
                 'email': 'transporteur-ci@example.com',
                 'type_compte': 'TRANSPORTEUR',
                 'pays': 'CI',
+                'accepte_contrat_transporteur': True,
             },
             format='json',
         )
@@ -516,6 +517,28 @@ class PaysUserChauffeurTests(TestCase):
         self.assertEqual(response.status_code, 201)
         user = User.objects.get(telephone='+22376000002')
         self.assertEqual(user.pays, 'ML')
+
+    def test_inscription_sans_email_reussie(self):
+        """L'email est optionnel à l'inscription — un compte reste utilisable
+        sans, seule la réinitialisation de mot de passe par email (seul canal
+        disponible, pas de passerelle SMS) lui sera fermée. Rendu obligatoire
+        une première fois puis revenu optionnel pour ne pas bloquer
+        l'inscription tant que l'envoi d'email n'est pas configuré en
+        production (EMAIL_HOST_PASSWORD vide)."""
+        response = self.client.post(
+            '/api/register/',
+            {
+                'username': '+22376000003',
+                'telephone': '+22376000003',
+                'password': 'secret123',
+                'type_compte': 'ENTREPRISE',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        user = User.objects.get(telephone='+22376000003')
+        self.assertEqual(user.email, '')
 
     def test_login_expose_pays(self):
         User.objects.create_user(
@@ -587,12 +610,13 @@ class PaysUserChauffeurTests(TestCase):
 
 
 class ReinitialisationMotDePasseParEmailTests(TestCase):
-    """`demander_reinitialisation`/`confirmer_reinitialisation` : le code
-    part désormais par email (`envoyer_email_reinitialisation`), jamais dans
-    la réponse API — une version antérieure le renvoyait directement ici
-    (mode démo, aucune passerelle configurée), ce qui permettait à quiconque
-    connaissant un numéro de téléphone de réinitialiser le mot de passe
-    associé sans jamais y avoir accès."""
+    """`demander_reinitialisation`/`confirmer_reinitialisation` : identifié
+    par email (seul canal de récupération disponible, pas de passerelle SMS)
+    — le code part par email (`envoyer_email_reinitialisation`) et n'apparaît
+    JAMAIS dans la réponse API : une version antérieure le renvoyait
+    directement ici (mode démo, aucune passerelle configurée), ce qui
+    permettait à quiconque connaissant l'email d'un compte de réinitialiser
+    le mot de passe associé sans jamais y avoir accès."""
 
     def setUp(self):
         self.client = APIClient()
@@ -613,7 +637,7 @@ class ReinitialisationMotDePasseParEmailTests(TestCase):
     def test_demander_reinitialisation_envoie_un_email_et_ne_renvoie_pas_le_code(self):
         response = self.client.post(
             '/api/mot-de-passe-oublie/',
-            {'telephone': '70000099'},
+            {'email': 'proprietaire@example.com'},
             format='json',
         )
 
@@ -624,23 +648,20 @@ class ReinitialisationMotDePasseParEmailTests(TestCase):
         self.assertRegex(code, r'^\d{6}$')
         self.assertIn(code, mail.outbox[0].body)
 
-    def test_demander_reinitialisation_sans_email_400(self):
-        self.user.email = ''
-        self.user.save(update_fields=['email'])
-
+    def test_demander_reinitialisation_email_insensible_a_la_casse(self):
         response = self.client.post(
             '/api/mot-de-passe-oublie/',
-            {'telephone': '70000099'},
+            {'email': 'PROPRIETAIRE@EXAMPLE.COM'},
             format='json',
         )
 
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(response.status_code, 200)
+        self._code_envoye()
 
-    def test_demander_reinitialisation_telephone_inconnu_404(self):
+    def test_demander_reinitialisation_email_inconnu_404(self):
         response = self.client.post(
             '/api/mot-de-passe-oublie/',
-            {'telephone': '70000098'},
+            {'email': 'inconnu@example.com'},
             format='json',
         )
 
@@ -649,14 +670,16 @@ class ReinitialisationMotDePasseParEmailTests(TestCase):
 
     def test_cycle_complet_reinitialisation(self):
         self.client.post(
-            '/api/mot-de-passe-oublie/', {'telephone': '70000099'}, format='json',
+            '/api/mot-de-passe-oublie/',
+            {'email': 'proprietaire@example.com'},
+            format='json',
         )
         code = self._code_envoye()
 
         response = self.client.post(
             '/api/mot-de-passe-oublie/confirmer/',
             {
-                'telephone': '70000099',
+                'email': 'proprietaire@example.com',
                 'code': code,
                 'nouveau_mot_de_passe': 'nouveau-mdp-456',
             },
@@ -670,14 +693,16 @@ class ReinitialisationMotDePasseParEmailTests(TestCase):
 
     def test_confirmer_mauvais_code_400(self):
         self.client.post(
-            '/api/mot-de-passe-oublie/', {'telephone': '70000099'}, format='json',
+            '/api/mot-de-passe-oublie/',
+            {'email': 'proprietaire@example.com'},
+            format='json',
         )
         self._code_envoye()
 
         response = self.client.post(
             '/api/mot-de-passe-oublie/confirmer/',
             {
-                'telephone': '70000099',
+                'email': 'proprietaire@example.com',
                 'code': '000000',
                 'nouveau_mot_de_passe': 'nouveau-mdp-456',
             },
@@ -689,7 +714,9 @@ class ReinitialisationMotDePasseParEmailTests(TestCase):
 
     def test_confirmer_code_expire_400(self):
         self.client.post(
-            '/api/mot-de-passe-oublie/', {'telephone': '70000099'}, format='json',
+            '/api/mot-de-passe-oublie/',
+            {'email': 'proprietaire@example.com'},
+            format='json',
         )
         code = self._code_envoye()
 
@@ -699,7 +726,7 @@ class ReinitialisationMotDePasseParEmailTests(TestCase):
         response = self.client.post(
             '/api/mot-de-passe-oublie/confirmer/',
             {
-                'telephone': '70000099',
+                'email': 'proprietaire@example.com',
                 'code': code,
                 'nouveau_mot_de_passe': 'nouveau-mdp-456',
             },
@@ -783,6 +810,7 @@ class TelephoneValidationTests(TestCase):
                 'email': 'telephone-invalide@example.com',
                 'type_compte': 'TRANSPORTEUR',
                 'pays': 'ML',
+                'accepte_contrat_transporteur': True,
             },
             format='json',
         )
@@ -800,6 +828,7 @@ class TelephoneValidationTests(TestCase):
                 'email': 'e164@example.com',
                 'type_compte': 'TRANSPORTEUR',
                 'pays': 'ML',
+                'accepte_contrat_transporteur': True,
             },
             format='json',
         )
@@ -823,6 +852,7 @@ class TelephoneValidationTests(TestCase):
                 'email': 'connexion-locale@example.com',
                 'type_compte': 'TRANSPORTEUR',
                 'pays': 'ML',
+                'accepte_contrat_transporteur': True,
             },
             format='json',
         )
@@ -910,6 +940,139 @@ class TelephoneValidationTests(TestCase):
         self.assertEqual(connexion.status_code, 200)
         self.assertEqual(connexion.data['user']['pays'], 'ML')
         self.assertEqual(connexion.data['user']['telephone'], '+22371112222')
+
+
+class ContratsTests(TestCase):
+    """Contrat de paiement (consultable par tous) et contrat de partenariat
+    transporteur (acceptation obligatoire à l'inscription) — `core/contrats.py`
+    et `core/pdf_contrats.py`."""
+
+    def setUp(self):
+        self.client = APIClient()
+
+    # -- Contenu public (JSON) ------------------------------------------------
+
+    def test_contrat_paiement_public_sans_authentification(self):
+        response = self.client.get('/api/contrats/paiement/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['type'], 'PAIEMENT')
+        self.assertTrue(response.data['sections'])
+
+    def test_contrat_transporteur_public_sans_authentification(self):
+        response = self.client.get('/api/contrats/transporteur/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['type'], 'TRANSPORTEUR')
+        self.assertTrue(response.data['sections'])
+
+    # -- PDF --------------------------------------------------------------
+
+    def test_contrat_paiement_pdf(self):
+        response = self.client.get('/api/contrats/paiement/pdf/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response.content.startswith(b'%PDF-'))
+
+    def test_contrat_transporteur_pdf(self):
+        response = self.client.get('/api/contrats/transporteur/pdf/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response.content.startswith(b'%PDF-'))
+
+    # -- Acceptation obligatoire à l'inscription transporteur ------------------
+
+    def test_inscription_transporteur_sans_acceptation_rejetee(self):
+        response = self.client.post(
+            '/api/register/',
+            {
+                'username': '+22374440001',
+                'telephone': '74440001',
+                'password': 'secret123',
+                'email': 'sans-contrat@example.com',
+                'type_compte': 'TRANSPORTEUR',
+                'pays': 'ML',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('accepte_contrat_transporteur', response.data)
+        self.assertFalse(User.objects.filter(telephone='+22374440001').exists())
+
+    def test_inscription_transporteur_avec_acceptation_enregistree(self):
+        from .contrats import CONTRAT_TRANSPORTEUR_VERSION
+
+        response = self.client.post(
+            '/api/register/',
+            {
+                'username': '+22374440002',
+                'telephone': '74440002',
+                'password': 'secret123',
+                'email': 'avec-contrat@example.com',
+                'type_compte': 'TRANSPORTEUR',
+                'pays': 'ML',
+                'accepte_contrat_transporteur': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        user = User.objects.get(telephone='+22374440002')
+        self.assertIsNotNone(user.contrat_transporteur_accepte_le)
+        self.assertEqual(user.contrat_transporteur_version_acceptee, CONTRAT_TRANSPORTEUR_VERSION)
+
+    def test_inscription_entreprise_ne_requiert_pas_le_contrat_transporteur(self):
+        response = self.client.post(
+            '/api/register/',
+            {
+                'username': '+22374440003',
+                'telephone': '74440003',
+                'password': 'secret123',
+                'email': 'entreprise-sans-contrat@example.com',
+                'type_compte': 'ENTREPRISE',
+                'pays': 'ML',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+
+    # -- Profil : statut d'acceptation exposé ---------------------------------
+
+    def test_profil_expose_acceptation_contrat_transporteur(self):
+        transporteur = User.objects.create_user(
+            username='transporteur-sans-contrat',
+            password='secret123',
+            telephone='+22374440004',
+            type_compte='TRANSPORTEUR',
+            pays='ML',
+        )
+        self.client.force_authenticate(transporteur)
+
+        avant = self.client.get('/api/profil/')
+        self.assertFalse(avant.data['contrat_transporteur_accepte'])
+
+        accepter = self.client.post('/api/contrats/transporteur/accepter/')
+        self.assertEqual(accepter.status_code, 200)
+
+        apres = self.client.get('/api/profil/')
+        self.assertTrue(apres.data['contrat_transporteur_accepte'])
+
+    def test_accepter_contrat_transporteur_refuse_hors_transporteur(self):
+        entreprise = User.objects.create_user(
+            username='entreprise-contrat',
+            password='secret123',
+            telephone='+22374440005',
+            type_compte='ENTREPRISE',
+            pays='ML',
+        )
+        self.client.force_authenticate(entreprise)
+
+        response = self.client.post('/api/contrats/transporteur/accepter/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_accepter_contrat_transporteur_requiert_authentification(self):
+        response = self.client.post('/api/contrats/transporteur/accepter/')
+        self.assertEqual(response.status_code, 401)
 
 
 class DashboardViewTests(TestCase):
@@ -3315,11 +3478,140 @@ class PaiementCarteFlowTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_deuxieme_initiation_refusee(self):
-        creer_paiement_service(self.mission, 'CARTE', self.client_user)
+    def test_moyens_paiement_selon_pays_du_payeur_pas_pays_depart(self):
+        """Les opérateurs Mobile Money proposés doivent dépendre du pays du
+        PAYEUR (son propre compte Mobile Money) et non du pays de départ de
+        la marchandise — un client sénégalais qui paie une mission au départ
+        du Ghana (aucun opérateur PayDunya documenté pour le Ghana) doit tout
+        de même voir les opérateurs sénégalais."""
+        self.client_user.pays = 'SN'
+        self.client_user.save(update_fields=['pays'])
+        mission = _creer_mission_avec_prix(
+            self.client_user, self.transporteur, prix_final=50000, pays_depart='GH',
+        )
+
+        response = self.client.get('/api/paiements/moyens/?montant=50000')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['pays'], 'SN')
+        self.assertTrue(response.data['mobile_money'])
+
+    def test_initiation_mobile_autorisee_selon_pays_du_payeur(self):
+        """Même correctif que ci-dessus, vérifié cette fois sur le chemin qui
+        bloque réellement l'initiation (`initier_paiement`, pas seulement
+        l'aperçu `moyens_paiement`)."""
+        self.client_user.pays = 'SN'
+        self.client_user.save(update_fields=['pays'])
+        mission = _creer_mission_avec_prix(
+            self.client_user, self.transporteur, prix_final=50000, pays_depart='GH',
+        )
+
+        response = self.client.post(
+            f'/api/missions/{mission.id}/paiement/initier/', {'mode': 'MOBILE'}
+        )
+
+        self.assertEqual(response.status_code, 201)
+
+    def test_reinitiation_autorisee_si_paiement_precedent_en_attente(self):
+        """Un paiement EN_ATTENTE (jamais confirmé — ex. app quittée avant de
+        saisir la carte) ne doit pas bloquer une nouvelle tentative : aucun
+        argent n'a réellement bougé pour la mission à ce stade."""
+        premier = creer_paiement_service(self.mission, 'CARTE', self.client_user)
         response = self.client.post(
             f'/api/missions/{self.mission.id}/paiement/initier/', {'mode': 'CARTE'}
         )
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(Paiement.objects.filter(id=premier.id).exists())
+        self.assertEqual(Paiement.objects.filter(mission=self.mission).count(), 1)
+
+    def test_reinitiation_autorisee_si_paiement_precedent_en_echec(self):
+        paiement = creer_paiement_service(self.mission, 'CARTE', self.client_user)
+        paiement.statut = Paiement.Statut.ECHEC
+        paiement.save(update_fields=['statut'])
+
+        response = self.client.post(
+            f'/api/missions/{self.mission.id}/paiement/initier/', {'mode': 'MANUEL'}
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['mode'], 'MANUEL')
+
+    def test_deuxieme_initiation_refusee_si_paiement_deja_encaisse(self):
+        """Une fois le paiement réellement engagé (au-delà d'EN_ATTENTE), une
+        nouvelle tentative doit rester bloquée — contrairement à EN_ATTENTE/
+        ECHEC, il s'agit ici d'un vrai paiement en cours."""
+        paiement = creer_paiement_service(self.mission, 'CARTE', self.client_user)
+        paiement.statut = Paiement.Statut.ENCAISSE
+        paiement.save(update_fields=['statut'])
+
+        response = self.client.post(
+            f'/api/missions/{self.mission.id}/paiement/initier/', {'mode': 'CARTE'}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_manuel_en_attente_non_remplacable(self):
+        """Contrairement à CARTE/MOBILE, un MANUEL EN_ATTENTE signifie
+        "en attente qu'un agent passe encaisser" — un état actif légitime,
+        pas un abandon. Une nouvelle tentative doit rester bloquée, sans
+        quoi une seconde initiation supprimerait silencieusement un paiement
+        qu'un agent est peut-être déjà en train d'aller encaisser."""
+        creer_paiement_service(self.mission, 'MANUEL', self.client_user)
+
+        response = self.client.post(
+            f'/api/missions/{self.mission.id}/paiement/initier/', {'mode': 'CARTE'}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_confirmer_paiement_accepte_le_mode_mobile(self):
+        """`confirmer_paiement_carte` doit aussi confirmer un paiement MOBILE
+        (passerelle simulateur, sans `checkout_url` à ouvrir : Mobile Money
+        n'a sinon aucun moyen d'être confirmé en développement), et enregistrer
+        l'opérateur/numéro fournis — `client_user.pays == 'ML'` (setUp), qui a
+        Orange Money comme opérateur PayDunya documenté."""
+        paiement = creer_paiement_service(self.mission, 'MOBILE', self.client_user)
+        initier_paiement_carte_service(paiement)
+        paiement.refresh_from_db()
+
+        response = self.client.post(
+            f'/api/paiements/{paiement.id}/confirmer-carte/',
+            {'mobile_operateur': 'Orange Money', 'mobile_numero': '70000099'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['statut'], 'SECURISE')
+        self.assertEqual(response.data['mobile_operateur'], 'Orange Money')
+        self.assertEqual(response.data['mobile_numero'], '+22370000099')
+
+    def test_confirmer_paiement_mobile_refuse_operateur_invalide(self):
+        paiement = creer_paiement_service(self.mission, 'MOBILE', self.client_user)
+        initier_paiement_carte_service(paiement)
+        paiement.refresh_from_db()
+
+        response = self.client.post(
+            f'/api/paiements/{paiement.id}/confirmer-carte/',
+            {'mobile_operateur': 'Wave Sénégal', 'mobile_numero': '70000099'},
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_confirmer_paiement_mobile_refuse_numero_invalide(self):
+        paiement = creer_paiement_service(self.mission, 'MOBILE', self.client_user)
+        initier_paiement_carte_service(paiement)
+        paiement.refresh_from_db()
+
+        response = self.client.post(
+            f'/api/paiements/{paiement.id}/confirmer-carte/',
+            {'mobile_operateur': 'Orange Money', 'mobile_numero': '12345'},
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_confirmer_paiement_refuse_le_mode_manuel(self):
+        paiement = creer_paiement_service(self.mission, 'MANUEL', self.client_user)
+
+        response = self.client.post(
+            f'/api/paiements/{paiement.id}/confirmer-carte/', {}
+        )
+
         self.assertEqual(response.status_code, 400)
 
     def test_webhook_reussi_securise_le_paiement(self):
@@ -3678,31 +3970,40 @@ class PayDunyaGatewayAdapterTests(TestCase):
         """Sans le paramètre `channels`, PayDunya affiche par défaut tout ce
         qui est autorisé sur le compte marchand (ex. Wave Sénégal à un
         client malien) — creer_transaction doit toujours le restreindre au
-        pays réel de la mission."""
+        pays du PAYEUR (son propre compte Mobile Money), pas au pays de
+        départ de la marchandise."""
         mock_post.return_value = Mock(json=lambda: {
             'response_code': '00',
             'response_text': 'https://paydunya.com/checkout/ml1',
             'token': 'TOKEN-ML-1',
         })
 
-        self.adaptateur.creer_transaction(self.paiement)  # mission ML (setUp)
+        self.adaptateur.creer_transaction(self.paiement)  # client_user.pays == 'ML' (setUp)
 
         canaux_envoyes = mock_post.call_args.kwargs['json']['invoice']['channels']
         self.assertEqual(canaux_envoyes, ['card', 'orange-money-mali'])
 
     @patch('core.gateway_paiement.requests.post')
-    def test_creer_transaction_carte_seule_pour_pays_sans_mobile_money_paydunya(self, mock_post):
+    def test_creer_transaction_canaux_suivent_le_client_pas_le_depart(self, mock_post):
+        """Un client ghanéen (aucun opérateur PayDunya documenté pour le
+        Ghana) qui paie une mission au départ du Mali (qui, lui, a Orange
+        Money) ne doit voir que la carte — le pays de départ de la
+        marchandise n'a aucune influence sur les canaux Mobile Money."""
         mock_post.return_value = Mock(json=lambda: {
             'response_code': '00',
             'response_text': 'https://paydunya.com/checkout/gh1',
             'token': 'TOKEN-GH-1',
         })
-        mission_gh = _creer_mission_avec_prix(
-            self.client_user, self.transporteur, prix_final=1000, pays_depart='GH',
+        client_gh = User.objects.create_user(
+            username='client-pd-gh', password='secret123',
+            telephone='0700000032', type_compte='ENTREPRISE', pays='GH',
         )
-        paiement_gh = creer_paiement_service(mission_gh, 'CARTE', self.client_user)
+        mission_ml = _creer_mission_avec_prix(
+            client_gh, self.transporteur, prix_final=1000, pays_depart='ML',
+        )
+        paiement = creer_paiement_service(mission_ml, 'CARTE', client_gh)
 
-        self.adaptateur.creer_transaction(paiement_gh)
+        self.adaptateur.creer_transaction(paiement)
 
         canaux_envoyes = mock_post.call_args.kwargs['json']['invoice']['channels']
         self.assertEqual(canaux_envoyes, ['card'])
